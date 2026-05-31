@@ -17,6 +17,7 @@ export function Sidebar() {
   const pathname = usePathname();
   return (
     <nav className="tsp-sidebar" aria-label="Documentation">
+      <span className="tsp-sidebar__label">Documentation</span>
       {pages.map((p) => (
         <Link
           key={p.href}
