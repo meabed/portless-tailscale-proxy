@@ -6,20 +6,28 @@ import (
 	"time"
 )
 
-// poll refreshes the store on an interval until ctx is cancelled, doing one
-// immediate refresh first. Added/removed routes are logged.
+// poll refreshes the store on an interval (and once immediately), logging
+// discovered and de-registered services.
 func poll(ctx context.Context, store *RouteStore, interval time.Duration) {
 	refresh := func() {
 		added, removed, err := store.refresh()
 		if err != nil {
-			log.Printf("warn: reading routes failed: %v", err)
+			log.Printf("warn: discovery failed: %v", err)
 			return
 		}
-		for _, h := range added {
-			log.Printf("route + %s", h)
+		for _, svc := range added {
+			rt := svc.Runtime
+			if rt == "" {
+				rt = "?"
+			}
+			dir := svc.Dir
+			if dir == "" {
+				dir = "—"
+			}
+			log.Printf("discovered %s  %s  :%d  %s", svc.Slug, rt, svc.Port, dir)
 		}
-		for _, h := range removed {
-			log.Printf("route - %s", h)
+		for _, slug := range removed {
+			log.Printf("de-registered %s (gone %d scans)", slug, store.deregisterCycles)
 		}
 	}
 	refresh()
