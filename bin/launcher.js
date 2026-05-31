@@ -43,15 +43,26 @@ function fromCache() {
 function downloadToCache() {
   const ext = PLATFORM === "win32" ? "zip" : "tar.gz";
   const asset = `tsp_${GOOS}_${GOARCH}.${ext}`;
-  const url = `https://github.com/${REPO}/releases/download/v${VERSION}/${asset}`;
+  // Prefer the exact version; fall back to the latest release if that asset is
+  // missing (e.g. a stale/placeholder launcher version) so it always self-heals.
+  const urls = [
+    `https://github.com/${REPO}/releases/download/v${VERSION}/${asset}`,
+    `https://github.com/${REPO}/releases/latest/download/${asset}`,
+  ];
   const dir = cacheDir();
   fs.mkdirSync(dir, { recursive: true });
   const archive = path.join(dir, asset);
 
-  process.stderr.write(`tailscale-proxy: fetching ${asset} (v${VERSION})…\n`);
-  const dl = spawnSync("curl", ["-fsSL", "-o", archive, url], { stdio: ["ignore", "ignore", "inherit"] });
-  if (dl.status !== 0) {
-    throw new Error(`download failed: ${url}`);
+  let ok = false;
+  for (const url of urls) {
+    process.stderr.write(`tailscale-proxy: fetching ${asset}…\n`);
+    if (spawnSync("curl", ["-fsSL", "-o", archive, url], { stdio: ["ignore", "ignore", "inherit"] }).status === 0) {
+      ok = true;
+      break;
+    }
+  }
+  if (!ok) {
+    throw new Error(`could not download ${asset} for v${VERSION} or latest`);
   }
   // `tar` extracts both .tar.gz and .zip on macOS/Linux/Windows-10+.
   const ex = spawnSync("tar", ["-xf", archive, "-C", dir], { stdio: ["ignore", "ignore", "inherit"] });

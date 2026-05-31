@@ -103,3 +103,32 @@ jobs:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+
+      - name: Release summary
+        if: always() && steps.gate.outputs.enabled == 'true'
+        env:
+          REPO: ${{ github.repository }}
+          DRY: ${{ inputs.dry-run }}
+        run: |
+          # semantic-release stamps package.json to the released version during the
+          # run; 0.0.0 means nothing was released.
+          VER=$(node -p "require('./package.json').version" 2>/dev/null || echo "")
+          {
+            echo "## 📦 tailscale-proxy release"
+            echo
+            if [ "$DRY" = "true" ]; then
+              echo "🟡 **Dry run** — nothing was published."
+            elif [ -n "$VER" ] && [ "$VER" != "0.0.0" ]; then
+              echo "✅ **Published \`v$VER\`**"
+              echo
+              echo "| | |"
+              echo "|---|---|"
+              echo "| npm | \`npx tailscale-proxy@$VER\` · [package](https://www.npmjs.com/package/tailscale-proxy/v/$VER) |"
+              echo "| GitHub release | [v$VER](https://github.com/$REPO/releases/tag/v$VER) |"
+              echo "| Homebrew | \`brew install meabed/tap/tsp\` |"
+              echo
+              echo "Platforms: darwin/linux/windows × amd64/arm64."
+            else
+              echo "ℹ️ **No release** — no \`feat\`/\`fix\`/\`perf\` commits since the last tag."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
