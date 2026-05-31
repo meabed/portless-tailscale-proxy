@@ -1,27 +1,85 @@
 #!/usr/bin/env node
 "use strict";
 
-const { spawnSync } = require("node:child_process");
+// Resolves the native `tsp` binary and execs it. Primary path: the per-platform
+// optionalDependency package (installed automatically by npm). Fallback: download
+// the matching binary from the GitHub release and cache it — so `npx
+// tailscale-proxy` always just works, even if the optional package was skipped.
 
-// Map Node's platform/arch to our per-platform package + binary name.
-function resolveBinary() {
-  const platform = process.platform; // 'darwin' | 'linux' | 'win32'
-  const arch = process.arch; // 'x64' | 'arm64'
-  const pkg = `tailscale-proxy-${platform}-${arch}`;
-  const exe = platform === "win32" ? "tsp.exe" : "tsp";
+const { spawnSync } = require("node:child_process");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+
+const REPO = "meabed/tailscale-proxy";
+const VERSION = require("../package.json").version;
+
+const PLATFORM = process.platform; // 'darwin' | 'linux' | 'win32'
+const ARCH = process.arch; // 'x64' | 'arm64'
+const EXE = PLATFORM === "win32" ? "tsp.exe" : "tsp";
+
+// goreleaser archive naming uses Go's GOOS/GOARCH.
+const GOOS = PLATFORM === "win32" ? "windows" : PLATFORM;
+const GOARCH = ARCH === "x64" ? "amd64" : ARCH;
+
+function fromOptionalDep() {
   try {
-    return require.resolve(`${pkg}/bin/${exe}`);
+    return require.resolve(`tailscale-proxy-${PLATFORM}-${ARCH}/bin/${EXE}`);
   } catch {
     return null;
   }
 }
 
-const bin = resolveBinary();
-if (!bin) {
+function cacheDir() {
+  const base = process.env.XDG_CACHE_HOME || path.join(os.homedir(), ".cache");
+  return path.join(base, "tailscale-proxy", `v${VERSION}`);
+}
+
+function fromCache() {
+  const p = path.join(cacheDir(), EXE);
+  return fs.existsSync(p) ? p : null;
+}
+
+function downloadToCache() {
+  const ext = PLATFORM === "win32" ? "zip" : "tar.gz";
+  const asset = `tsp_${GOOS}_${GOARCH}.${ext}`;
+  const url = `https://github.com/${REPO}/releases/download/v${VERSION}/${asset}`;
+  const dir = cacheDir();
+  fs.mkdirSync(dir, { recursive: true });
+  const archive = path.join(dir, asset);
+
+  process.stderr.write(`tailscale-proxy: fetching ${asset} (v${VERSION})…\n`);
+  const dl = spawnSync("curl", ["-fsSL", "-o", archive, url], { stdio: ["ignore", "ignore", "inherit"] });
+  if (dl.status !== 0) {
+    throw new Error(`download failed: ${url}`);
+  }
+  // `tar` extracts both .tar.gz and .zip on macOS/Linux/Windows-10+.
+  const ex = spawnSync("tar", ["-xf", archive, "-C", dir], { stdio: ["ignore", "ignore", "inherit"] });
+  if (ex.status !== 0) {
+    throw new Error(`extract failed: ${archive}`);
+  }
+  fs.rmSync(archive, { force: true });
+  const bin = path.join(dir, EXE);
+  if (!fs.existsSync(bin)) {
+    throw new Error(`binary ${EXE} not found in ${asset}`);
+  }
+  fs.chmodSync(bin, 0o755);
+  return bin;
+}
+
+function resolveBinary() {
+  return fromOptionalDep() || fromCache() || downloadToCache();
+}
+
+let bin;
+try {
+  bin = resolveBinary();
+} catch (err) {
   console.error(
-    `tailscale-proxy: no prebuilt binary for ${process.platform}-${process.arch}.\n` +
-      `Install from source: go install github.com/meabed/tailscale-proxy@latest\n` +
-      `or download a release: https://github.com/meabed/tailscale-proxy/releases`
+    `tailscale-proxy: could not obtain a binary for ${PLATFORM}-${ARCH} (v${VERSION}).\n` +
+      `${err.message}\n` +
+      `Install from source instead: go install github.com/${REPO}@latest\n` +
+      `Releases: https://github.com/${REPO}/releases`
   );
   process.exit(1);
 }
