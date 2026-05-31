@@ -14,16 +14,16 @@ if (!version) {
 
 // [npmPlatform, npmArch, archiveFile, exe, isZip]
 const targets = [
-  ["darwin", "arm64", "ptp_darwin_arm64.tar.gz", "ptp", false],
-  ["darwin", "x64", "ptp_darwin_amd64.tar.gz", "ptp", false],
-  ["linux", "x64", "ptp_linux_amd64.tar.gz", "ptp", false],
-  ["linux", "arm64", "ptp_linux_arm64.tar.gz", "ptp", false],
-  ["win32", "x64", "ptp_windows_amd64.zip", "ptp.exe", true],
-  ["win32", "arm64", "ptp_windows_arm64.zip", "ptp.exe", true],
+  ["darwin", "arm64", "tsp_darwin_arm64.tar.gz", "tsp", false],
+  ["darwin", "x64", "tsp_darwin_amd64.tar.gz", "tsp", false],
+  ["linux", "x64", "tsp_linux_amd64.tar.gz", "tsp", false],
+  ["linux", "arm64", "tsp_linux_arm64.tar.gz", "tsp", false],
+  ["win32", "x64", "tsp_windows_amd64.zip", "tsp.exe", true],
+  ["win32", "arm64", "tsp_windows_arm64.zip", "tsp.exe", true],
 ];
 
 for (const [os, arch, archiveFile, exe, isZip] of targets) {
-  const pkgName = `portless-tailscale-proxy-${os}-${arch}`;
+  const pkgName = `tailscale-proxy-${os}-${arch}`;
   const outDir = join("npm", "dist", pkgName);
   const binDir = join(outDir, "bin");
   mkdirSync(binDir, { recursive: true });
@@ -44,13 +44,13 @@ for (const [os, arch, archiveFile, exe, isZip] of targets) {
   const pkg = {
     name: pkgName,
     version,
-    description: `Prebuilt portless-tailscale-proxy binary for ${os}-${arch}.`,
+    description: `Prebuilt tailscale-proxy binary for ${os}-${arch}.`,
     os: [os],
     cpu: [arch],
     license: "MIT",
     repository: {
       type: "git",
-      url: "git+https://github.com/meabed/portless-tailscale-proxy.git",
+      url: "git+https://github.com/meabed/tailscale-proxy.git",
     },
     files: [`bin/${exe}`],
   };
