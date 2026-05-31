@@ -8,26 +8,25 @@ Releases are **tag-driven**. Pushing a `v*` tag runs
    cask in `meabed/homebrew-tap`.
 2. Generates the per-platform npm packages from the release archives
    (`npm/build-platform-packages.mjs`) and publishes them.
-3. Publishes the npm launcher package (`portless-tailscale-proxy`) with its
+3. Publishes the npm launcher package (`tailscale-proxy`) with its
    `optionalDependencies` pinned to the release version.
 
-## One-time prerequisites
+Distribution channels: **npx / npm** and **Homebrew** (both pull from the GitHub
+Release artifacts).
 
-Before the first release, set these up:
+## One-time prerequisites
 
 | What | Where | Notes |
 | --- | --- | --- |
 | `NPM_TOKEN` | repo secret | npm **automation** token with publish rights |
-| `HOMEBREW_TAP_GITHUB_TOKEN` | repo secret | a PAT (classic, `repo` scope, or fine-grained with contents:write) for the tap repo |
-| `meabed/homebrew-tap` | a repo | empty public repo; goreleaser writes `Casks/ptp.rb` |
+| `HOMEBREW_TAP_GITHUB_TOKEN` | repo secret | PAT with contents:write for the tap repo |
+| `meabed/homebrew-tap` | a repo | empty public repo; goreleaser writes `Casks/tsp.rb` |
 
 `GITHUB_TOKEN` is provided automatically by Actions.
 
-Add secrets with:
-
 ```bash
-gh secret set NPM_TOKEN --repo meabed/portless-tailscale-proxy
-gh secret set HOMEBREW_TAP_GITHUB_TOKEN --repo meabed/portless-tailscale-proxy
+gh secret set NPM_TOKEN --repo meabed/tailscale-proxy
+gh secret set HOMEBREW_TAP_GITHUB_TOKEN --repo meabed/tailscale-proxy
 gh repo create meabed/homebrew-tap --public --description "Homebrew tap"
 ```
 
@@ -41,9 +40,9 @@ git push origin v0.1.0
 Watch it:
 
 ```bash
-gh run watch --repo meabed/portless-tailscale-proxy
-gh release view v0.1.0 --repo meabed/portless-tailscale-proxy
-npm view portless-tailscale-proxy version
+gh run watch --repo meabed/tailscale-proxy
+gh release view v0.1.0 --repo meabed/tailscale-proxy
+npm view tailscale-proxy version
 ```
 
 ## Test the build locally first
@@ -57,10 +56,6 @@ node npm/build-platform-packages.mjs 0.0.0-test
 ls npm/dist/                   # per-platform npm packages
 ```
 
-## Distribution channels (all produced from one tag)
-
-- **npm / npx** — launcher + per-platform binary packages (gated by `os`/`cpu`).
-- **GitHub Releases** — `tar.gz` (Unix) / `zip` (Windows) archives + `checksums.txt`.
-- **Homebrew** — `brew install meabed/tap/ptp` (cask, auto-bumped).
-- **curl | sh** — [`install.sh`](../install.sh) fetches the matching release binary.
-- **go install** — `go install github.com/meabed/portless-tailscale-proxy@latest`.
+After a release, users update with **`tsp update`** (self-update for standalone
+binaries; prints `brew upgrade tsp` / `npm i -g tailscale-proxy@latest` for managed
+installs).

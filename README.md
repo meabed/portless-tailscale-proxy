@@ -1,25 +1,25 @@
-# portless-tailscale-proxy (`ptp`)
+# tailscale-proxy (`tsp`)
 
-[![ci](https://github.com/meabed/portless-tailscale-proxy/actions/workflows/ci.yml/badge.svg)](https://github.com/meabed/portless-tailscale-proxy/actions/workflows/ci.yml)
-[![release](https://github.com/meabed/portless-tailscale-proxy/actions/workflows/release.yml/badge.svg)](https://github.com/meabed/portless-tailscale-proxy/actions/workflows/release.yml)
+[![ci](https://github.com/meabed/tailscale-proxy/actions/workflows/ci.yml/badge.svg)](https://github.com/meabed/tailscale-proxy/actions/workflows/ci.yml)
+[![release](https://github.com/meabed/tailscale-proxy/actions/workflows/release.yml/badge.svg)](https://github.com/meabed/tailscale-proxy/actions/workflows/release.yml)
 
-Route a **single Tailscale Funnel** to **all** your [portless](https://portless.sh)
-dev servers, by URL path.
+Discover your local dev servers by **port**, and expose them through a **single
+Tailscale entry** — privately (Serve, tailnet-only) or publicly (Funnel) — routed
+by **project name**.
 
-Tailscale Funnel can only expose **one** hostname (your node's MagicDNS name) on a
-fixed set of ports. It can't do wildcard subdomains. So `ptp` puts a tiny
-path-routing reverse proxy behind the Funnel: the **first path segment** of the
-URL is the portless hostname, and it selects which local dev server to forward to.
+No per-app wiring: just run your servers (`node`, `bun`,
+`deno`, …) and `tsp` finds the ones listening in a port range, derives a path slug
+from each project's folder, and routes to them under one hostname:
 
 ```
-https://<node>.ts.net/module-help-ai-agent-api.local/foo
-                      └──────────────┬───────────────┘
-       ptp strips the segment, forwards → 127.0.0.1:4434/foo
+https://<node>.ts.net/<project>/foo
+                      └────┬────┘
+   tsp strips the segment, forwards → 127.0.0.1:<port>/foo
 ```
 
-It re-reads `~/.portless/routes.json` every few seconds, so servers that come and
-go are picked up automatically. Streaming responses (SSE) and WebSocket upgrades
-(Vite/Next HMR) pass straight through. Zero runtime dependencies — one small Go
+It re-scans every few seconds (so servers that come and go are picked up), keeps a
+service around for a few scans before de-registering (no flapping on restarts), and
+streams SSE / proxies WebSocket upgrades. Zero runtime dependencies — one small Go
 binary.
 
 ---
@@ -27,17 +27,19 @@ binary.
 ## Quick start
 
 ```bash
-# 1. Check your environment (tells you exactly what's missing, with links)
-npx portless-tailscale-proxy doctor
+# Check your environment (tells you exactly what's missing, with links)
+npx tailscale-proxy doctor
 
-# 2. Expose every portless server through your Tailscale Funnel
-npx portless-tailscale-proxy start
+# Discover dev servers in :3000-5000 and expose them publicly (Funnel)
+npx tailscale-proxy            # "start" is the default command
+
+# ...or save your preferences once, then just run `tsp`
+npx tailscale-proxy configure --ports 3000-9000 --private
+npx tailscale-proxy            # uses the saved config
 ```
 
-Then open `https://<your-node>.ts.net/<portless-hostname>.local/` from anywhere.
-Press <kbd>Ctrl-C</kbd> to stop — the Funnel is reset automatically on exit.
-
-> Find your hostnames any time with `ptp list`.
+Open `https://<your-node>.ts.net/<project>/` from anywhere (for Funnel) or from
+your tailnet (for Serve). <kbd>Ctrl-C</kbd> resets the Serve/Funnel entry on exit.
 
 ---
 
@@ -45,119 +47,121 @@ Press <kbd>Ctrl-C</kbd> to stop — the Funnel is reset automatically on exit.
 
 | Method | Command |
 | --- | --- |
-| **npx** (no install) | `npx portless-tailscale-proxy <command>` |
-| **npm** (global) | `npm i -g portless-tailscale-proxy` |
-| **Homebrew** | `brew install meabed/tap/ptp` |
-| **curl \| sh** | `curl -fsSL https://raw.githubusercontent.com/meabed/portless-tailscale-proxy/main/install.sh \| sh` |
-| **Go** | `go install github.com/meabed/portless-tailscale-proxy@latest` |
-| **Binaries** | [GitHub Releases](https://github.com/meabed/portless-tailscale-proxy/releases) |
+| **npx** (no install) | `npx tailscale-proxy <command>` |
+| **npm** (global) | `npm i -g tailscale-proxy` |
+| **Homebrew** | `brew install meabed/tap/tsp` |
 
 Supported: **macOS, Linux, Windows, WSL** (amd64 + arm64).
+(`go install github.com/meabed/tailscale-proxy@latest` also works if you have Go.)
+
+Update later with **`tsp update`** — it self-updates a standalone binary, or prints
+`brew upgrade tsp` / `npm i -g tailscale-proxy@latest` for managed installs.
 
 ---
 
 ## Commands
 
 ```
-ptp start     Preflight, run the proxy, and start the Tailscale Funnel
-ptp status    Print Funnel status and the current route map
-ptp list      Print the live hostname → port map and public URLs
-ptp reset     Stop the Funnel (tailscale funnel reset) and exit
-ptp doctor    Check tailscale / Funnel / portless and print fix links
+tsp [flags]         Default: run "start" with your saved config
+tsp start           Discover services, run the proxy, and expose it
+tsp status          Serve/Funnel status + the current service map
+tsp list            Discovered services (slug → runtime, port, project, URL)
+tsp reset           Remove the Serve/Funnel entry and exit
+tsp doctor          Check tailscale, exposure readiness, and discovery
+tsp configure       Save defaults to ~/.tailscale-proxy/config.json
+tsp update          Update to the latest release
 ```
 
-Run `ptp <command> --help` for command-specific flags. Global: `-h/--help`, `-v/--version`.
+Run `tsp start --help` for all flags. Global: `-h/--help`, `-v/--version`.
 
-### `ptp start` flags
+### `start` flags (defaults come from your config)
 
 | Flag | Default | Meaning |
 | --- | --- | --- |
+| `--ports <lo-hi\|port>` | `3000-5000` | Port range **or a single port** to scan |
+| `--all` | off | Include all listeners, not just web runtimes |
+| `--runtimes <list>` | `node,bun,deno` | Comma-separated runtimes to include |
+| `--private` | off | Expose privately via Tailscale **Serve** (default: **Funnel**) |
 | `--port <n>` | `8443` | Local proxy HTTP port |
-| `--interval <sec>` | `20` | How often to re-read portless state |
-| `--state <path>` | `~/.portless/routes.json` | portless state file |
-| `--funnel-port <n>` | `443` | Public Funnel port — must be `443`, `8443`, or `10000` |
-| `--bg` | off | Run `ptp` detached in the background (logs → `./ptp.log`) |
-| `--fg` | on | Run in the foreground |
-| `--no-funnel` | off | Run the proxy only; print the `tailscale` command to run yourself |
-| `--log-requests` | on | Log each proxied request (status, method, path, target, duration). `--log-requests=false` to disable |
+| `--interval <sec>` | `20` | Re-scan period |
+| `--https-port <n>` | `443` | Public/tailnet HTTPS port (Funnel: `443`/`8443`/`10000`) |
+| `--deregister-cycles <n>` | `5` | Missing scans before a gone service is removed |
+| `--bg` | off | Run detached (logs → `./tsp.log`) |
+| `--proxy-only` | off | Run the proxy only; print the `tailscale` command |
+| `--log-requests` | on | Log each proxied request |
 | `--quiet` | off | Disable per-request logging |
 
-On startup (and via `ptp list`/`ptp status`) the **public Funnel URL of every
-service** is printed, so you can copy-paste straight into a browser:
+On startup `tsp` prints whether it loaded your config and the effective parameters,
+then logs each discovered service and any de-registration:
 
 ```
-Services:
-  https://bigfoot.quoll-adhara.ts.net/module-help-ai-agent-api.local/  →  127.0.0.1:4434
-  https://bigfoot.quoll-adhara.ts.net/www-web-help-ai.local/           →  127.0.0.1:4764
+Using config: /Users/me/.tailscale-proxy/config.json
+  ports=3000-5000  mode=public (Funnel)  proxy=127.0.0.1:8443  https=443
+  interval=20s  runtimes=node,bun,deno (default)  deregister-after=5 scans  log-requests=true
 
-2026/05/31 01:05:11 200 GET    /module-help-ai-agent-api.local/ → 127.0.0.1:4434 (3ms)
-2026/05/31 01:05:11 404 GET    /nope.local/x → — (0s)
+2026/05/31 02:05:48 discovered help-ai-web   node   :4983   ~/work/help-ai/apps/web
+2026/05/31 02:05:49 200 GET    /help-ai-web/ → 127.0.0.1:4983 (6ms)
 ```
 
-Request logs are colorized by status when writing to a terminal (set `NO_COLOR` to disable).
+Request logs are colorized by status on a terminal (set `NO_COLOR` to disable).
 
-Examples:
+---
 
-```bash
-ptp start                      # default: proxy on :8443, Funnel public on :443
-ptp start --port 9000 --interval 10
-ptp start --funnel-port 8443   # serve the Funnel on the 8443 public port
-ptp start --no-funnel          # local proxy only (CI, debugging, custom funnels)
-ptp start --bg                 # detach; check ./ptp.log; stop with `ptp reset` + kill
+## Configuration
+
+`tsp configure [flags]` writes `~/.tailscale-proxy/config.json` (created on first
+use). Flags override config at runtime; the file is the source of defaults.
+
+```json
+{
+  "ports": "3000-5000", "all": false, "runtimes": "", "private": false,
+  "port": 8443, "interval": 20, "httpsPort": 443,
+  "logRequests": true, "deregisterCycles": 5
+}
 ```
 
 ---
 
 ## Requirements
 
-1. **[Tailscale](https://tailscale.com/download)** with **Funnel enabled** for your tailnet:
-   - [HTTPS certificates](https://tailscale.com/kb/1153/enabling-https) enabled, and
-   - the `funnel` node attribute granted in your tailnet policy file.
-   - See the [Funnel docs](https://tailscale.com/kb/1223/funnel).
-2. **[portless](https://portless.sh)** running locally:
-   ```bash
-   npm install -g portless
-   portless proxy start
-   ```
+1. **[Tailscale](https://tailscale.com/download)**, logged in (`tailscale up`).
+   For **public** exposure (Funnel), Funnel must be enabled for your tailnet:
+   [HTTPS certificates](https://tailscale.com/kb/1153/enabling-https) + the `funnel`
+   node attribute ([Funnel docs](https://tailscale.com/kb/1223/funnel)). Private
+   exposure (Serve) needs no extra setup.
+2. **`lsof`** on macOS/Linux (macOS ships it; Linux: `apt/dnf install lsof`).
+   Windows uses `netstat`/`tasklist` (built in).
 
-Not sure? Just run **`ptp doctor`** — it checks all of the above and prints the
-exact fix link for anything missing:
-
-```
-✓ tailscale installed  (1.98.2)
-✓ tailscale up
-✓ funnel enabled
-✓ portless routes  (4 route(s))
-
-All checks passed — you're ready to `ptp start`.
-```
+Run `tsp doctor` — it checks all of the above and prints the exact fix link.
 
 ---
 
 ## How it works
 
-1. A ticker reads `~/.portless/routes.json` into a `hostname → port` map every
-   `--interval` seconds.
-2. A `net/http` reverse proxy matches the first path segment against that map,
-   strips it, rewrites the `Host` header, and forwards to `127.0.0.1:<port>`.
-   Streaming and WebSocket upgrades are handled by the Go standard library.
-3. `tailscale funnel --bg <proxy-port>` exposes the proxy publicly on your node.
-   On exit (`Ctrl-C`), the Funnel is reset.
+1. Every `--interval` seconds, `tsp` lists listening TCP sockets in the range
+   (macOS/Linux via `lsof`+`ps`, Windows via `netstat`+`tasklist`), classifies the
+   runtime, and derives a slug from the nearest project-root folder
+   (`package.json`/`.git`/…), de-duplicating collisions.
+2. A `net/http` reverse proxy matches the first path segment to a service, strips
+   it, rewrites `Host`, and forwards to `127.0.0.1:<port>` (streaming + WebSocket
+   preserved, bounded connection pool).
+3. `tailscale serve|funnel --bg <proxy-port>` exposes the proxy. On exit the entry
+   is reset.
 
-See [docs/HOW-IT-WORKS.md](docs/HOW-IT-WORKS.md) for the full design.
+More in [docs/HOW-IT-WORKS.md](docs/HOW-IT-WORKS.md).
 
 ---
 
 ## Troubleshooting
 
-**Testing from the same Mac shows `x-portless` and a 404 — but it works from my phone.**
-That's expected. From the host machine, MagicDNS resolves `<node>.ts.net` to your
-*tailnet* IP, and portless's local proxy (which binds `:443` on all interfaces)
-answers directly — the request never reaches the public Funnel. Test from outside
-your tailnet, or see [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) for how to
-hit the public Funnel ingress from the host.
+`tsp doctor` first. Common issues (full list in
+[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)):
 
-More in [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
+- **Works from my phone but not my Mac** — from the host, MagicDNS resolves
+  `<node>.ts.net` to your tailnet IP, so requests may not traverse the public
+  Funnel. Test from outside your tailnet (see the doc for how to force it locally).
+- **No services found** — start a dev server in range, widen `--ports`, or `--all`.
+- **`lsof` not found** — install it (`apt/dnf install lsof`).
 
 ---
 
@@ -166,13 +170,13 @@ More in [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
 ```bash
 go test ./...          # run the test suite
 go vet ./...           # static checks
-go build -o ptp .      # build the binary
+go build -o tsp .      # build the binary
 goreleaser release --snapshot --clean --skip=publish   # full cross-platform build
 ```
 
 CI builds, vets, and race-tests on Linux/macOS/Windows and cross-compiles all six
-release targets on every push. See [docs/RELEASING.md](docs/RELEASING.md) for how
-releases are cut and published.
+release targets on every push. Releases are tag-driven — see
+[docs/RELEASING.md](docs/RELEASING.md).
 
 ---
 
