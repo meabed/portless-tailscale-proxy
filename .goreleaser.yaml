@@ -1,20 +1,20 @@
 version: 2
-project_name: ptp
+project_name: tsp
 before:
   hooks:
     - go mod tidy
 builds:
-  - id: ptp
+  - id: tsp
     main: .
-    binary: ptp
+    binary: tsp
     env: [CGO_ENABLED=0]
     ldflags:
       - -s -w -X main.version={{.Version}}
     goos: [darwin, linux, windows]
     goarch: [amd64, arm64]
 archives:
-  - id: ptp
-    name_template: "ptp_{{ .Os }}_{{ .Arch }}"
+  - id: tsp
+    name_template: "tsp_{{ .Os }}_{{ .Arch }}"
     formats: [tar.gz]
     format_overrides:
       - goos: windows
@@ -22,22 +22,22 @@ archives:
 checksum:
   name_template: "checksums.txt"
 homebrew_casks:
-  - name: ptp
+  - name: tsp
     repository:
       owner: meabed
       name: homebrew-tap
-    homepage: "https://github.com/meabed/portless-tailscale-proxy"
-    description: "Route a Tailscale Funnel to portless dev servers by URL path"
+    homepage: "https://github.com/meabed/tailscale-proxy"
+    description: "Discover local dev servers and expose them through Tailscale Serve/Funnel"
     license: "MIT"
-    binaries: [ptp]
+    binaries: [tsp]
     # The binary isn't notarized; strip the quarantine flag on macOS so it runs.
     hooks:
       post:
         install: |
           if OS.mac?
-            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/ptp"]
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/tsp"]
           end
 release:
   github:
     owner: meabed
-    name: portless-tailscale-proxy
+    name: tailscale-proxy
