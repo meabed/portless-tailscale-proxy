@@ -21,7 +21,7 @@ archives:
         formats: [zip]
 checksum:
   name_template: "checksums.txt"
-brews:
+homebrew_casks:
   - name: ptp
     repository:
       owner: meabed
@@ -29,8 +29,14 @@ brews:
     homepage: "https://github.com/meabed/portless-tailscale-proxy"
     description: "Route a Tailscale Funnel to portless dev servers by URL path"
     license: "MIT"
-    install: |
-      bin.install "ptp"
+    binaries: [ptp]
+    # The binary isn't notarized; strip the quarantine flag on macOS so it runs.
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/ptp"]
+          end
 release:
   github:
     owner: meabed

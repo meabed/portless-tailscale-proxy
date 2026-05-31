@@ -1,9 +1,10 @@
-// Generates npm/dist/<pkg>/ for each platform from binaries in dist/.
-// Expects goreleaser/CI to have produced binaries at:
-//   dist/ptp_<os>_<arch>/ptp[.exe]
+// Generates npm/dist/<pkg>/ for each platform from the release archives in dist/.
+// Reads from the goreleaser archives (stable names we control via name_template),
+// not the build directories (whose names include GOAMD64/GOARM64 suffixes).
 // Usage: node npm/build-platform-packages.mjs <version>
-import { mkdirSync, writeFileSync, copyFileSync, existsSync } from "node:fs";
+import { mkdirSync, writeFileSync, existsSync, chmodSync } from "node:fs";
 import { join } from "node:path";
+import { execFileSync } from "node:child_process";
 
 const version = process.argv[2];
 if (!version) {
@@ -11,28 +12,34 @@ if (!version) {
   process.exit(1);
 }
 
-// [npmPlatform, npmArch, goBinDir, exe]
+// [npmPlatform, npmArch, archiveFile, exe, isZip]
 const targets = [
-  ["darwin", "arm64", "ptp_darwin_arm64", "ptp"],
-  ["darwin", "x64", "ptp_darwin_amd64_v1", "ptp"],
-  ["linux", "x64", "ptp_linux_amd64_v1", "ptp"],
-  ["linux", "arm64", "ptp_linux_arm64", "ptp"],
-  ["win32", "x64", "ptp_windows_amd64_v1", "ptp.exe"],
-  ["win32", "arm64", "ptp_windows_arm64", "ptp.exe"],
+  ["darwin", "arm64", "ptp_darwin_arm64.tar.gz", "ptp", false],
+  ["darwin", "x64", "ptp_darwin_amd64.tar.gz", "ptp", false],
+  ["linux", "x64", "ptp_linux_amd64.tar.gz", "ptp", false],
+  ["linux", "arm64", "ptp_linux_arm64.tar.gz", "ptp", false],
+  ["win32", "x64", "ptp_windows_amd64.zip", "ptp.exe", true],
+  ["win32", "arm64", "ptp_windows_arm64.zip", "ptp.exe", true],
 ];
 
-for (const [os, arch, goDir, exe] of targets) {
+for (const [os, arch, archiveFile, exe, isZip] of targets) {
   const pkgName = `portless-tailscale-proxy-${os}-${arch}`;
   const outDir = join("npm", "dist", pkgName);
   const binDir = join(outDir, "bin");
   mkdirSync(binDir, { recursive: true });
 
-  const src = join("dist", goDir, exe);
-  if (!existsSync(src)) {
-    console.error(`missing binary: ${src}`);
+  const archive = join("dist", archiveFile);
+  if (!existsSync(archive)) {
+    console.error(`missing archive: ${archive}`);
     process.exit(1);
   }
-  copyFileSync(src, join(binDir, exe));
+  // Extract just the binary, flattened into binDir.
+  if (isZip) {
+    execFileSync("unzip", ["-o", "-j", archive, exe, "-d", binDir], { stdio: "inherit" });
+  } else {
+    execFileSync("tar", ["-xzf", archive, "-C", binDir, exe], { stdio: "inherit" });
+  }
+  chmodSync(join(binDir, exe), 0o755);
 
   const pkg = {
     name: pkgName,
