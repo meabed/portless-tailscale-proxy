@@ -13,8 +13,9 @@ if (!existsSync(distRoot)) {
   process.exit(1);
 }
 
-// npm provenance only works in supported CI with an OIDC id-token.
-const provenance = !!process.env.GITHUB_ACTIONS;
+// Provenance requires npm trusted-publishing setup; opt in explicitly once the
+// package + trusted publisher exist (TSP_PROVENANCE=1), off by default.
+const provenance = process.env.TSP_PROVENANCE === "1";
 
 const pkgs = readdirSync(distRoot, { withFileTypes: true })
   .filter((d) => d.isDirectory())

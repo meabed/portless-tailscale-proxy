@@ -23,21 +23,26 @@ if (!token) {
   process.exit(0);
 }
 
+// Best-effort: a Homebrew tap failure must NOT fail the release (npm + GitHub
+// release already succeeded by this point).
 function run(cmd, args, opts = {}) {
   const res = spawnSync(cmd, args, { stdio: "inherit", ...opts });
   if (res.status !== 0) {
-    console.error(`✗ ${cmd} ${args.join(" ")} exited ${res.status}`);
-    process.exit(res.status ?? 1);
+    throw new Error(`${cmd} ${args.join(" ")} exited ${res.status}`);
   }
 }
 
-const work = mkdtempSync(join(tmpdir(), "tsp-tap-"));
-const repoURL = `https://x-access-token:${token}@github.com/${TAP}.git`;
-run("git", ["clone", "--depth", "1", repoURL, work]);
-mkdirSync(join(work, "Casks"), { recursive: true });
-copyFileSync(caskSrc, join(work, "Casks", "tsp.rb"));
-run("git", ["-C", work, "add", "Casks/tsp.rb"]);
-run("git", ["-C", work, "-c", "user.name=meabed-bot", "-c", "user.email=mo@meabed.com",
-  "commit", "-m", `tsp ${version}`]);
-run("git", ["-C", work, "push", "origin", "HEAD"]);
-console.log(`pushed Casks/tsp.rb (${version}) to ${TAP}`);
+try {
+  const work = mkdtempSync(join(tmpdir(), "tsp-tap-"));
+  const repoURL = `https://x-access-token:${token}@github.com/${TAP}.git`;
+  run("git", ["clone", "--depth", "1", repoURL, work]);
+  mkdirSync(join(work, "Casks"), { recursive: true });
+  copyFileSync(caskSrc, join(work, "Casks", "tsp.rb"));
+  run("git", ["-C", work, "add", "Casks/tsp.rb"]);
+  run("git", ["-C", work, "-c", "user.name=meabed-bot", "-c", "user.email=mo@meabed.com",
+    "commit", "-m", `tsp ${version}`]);
+  run("git", ["-C", work, "push", "origin", "HEAD"]);
+  console.log(`pushed Casks/tsp.rb (${version}) to ${TAP}`);
+} catch (err) {
+  console.warn(`! Homebrew tap update skipped (non-fatal): ${err.message}`);
+}
