@@ -9,11 +9,11 @@ import (
 
 func TestPoll_picksUpChanges(t *testing.T) {
 	var stage atomic.Int32
-	store := NewRouteStore(func() ([]Service, error) {
+	store := NewRouteStore(func() ([]Service, []Duplicate, error) {
 		if stage.Load() == 0 {
-			return nil, nil
+			return nil, nil, nil
 		}
-		return []Service{{Slug: "x", Port: 9, Runtime: "node"}}, nil
+		return []Service{{Slug: "x", Port: 9, Runtime: "node"}}, nil, nil
 	}, 5)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

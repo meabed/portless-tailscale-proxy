@@ -60,7 +60,7 @@ func runDoctor(r Runner, disc *Discoverer, cfg discoverConfig, mode Mode) []Chec
 	}
 
 	// Discovery readiness.
-	svcs, derr := disc.Discover(cfg)
+	svcs, _, derr := disc.Discover(cfg)
 	if derr != nil {
 		checks = append(checks, Check{
 			Name: "service discovery", OK: false, Detail: derr.Error(),

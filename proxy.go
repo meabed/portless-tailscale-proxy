@@ -107,13 +107,9 @@ func newHandler(store *RouteStore, logRequests bool) http.Handler {
 		start := time.Now()
 		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 
-		seg, rest := splitFirstSegment(r.URL.Path)
-		port, ok := 0, false
-		if seg != "" {
-			port, ok = store.lookup(seg)
-		}
+		port, path, ok := resolveRoute(store, r, w)
 		if ok {
-			tgt := target{host: "127.0.0.1:" + strconv.Itoa(port), path: rest}
+			tgt := target{host: "127.0.0.1:" + strconv.Itoa(port), path: path}
 			ctx := context.WithValue(r.Context(), targetKey, tgt)
 			proxy.ServeHTTP(rec, r.WithContext(ctx))
 		} else {
@@ -124,6 +120,37 @@ func newHandler(store *RouteStore, logRequests bool) http.Handler {
 			logRequest(r, rec.status, port, time.Since(start))
 		}
 	})
+}
+
+// routeCookie pins a browser to the last project it opened, so prefix-less
+// asset/API requests (e.g. /_next/static/..., /api/...) — which lose the
+// /<slug>/ prefix because the app assumes it lives at the root — still reach the
+// right dev server. Without this, those requests 404 and the page renders broken.
+const routeCookie = "tsp_route"
+
+// resolveRoute determines the upstream port and rewritten path for a request.
+// First path segment matching a slug wins (prefix stripped, affinity cookie set).
+// Otherwise it falls back to the affinity cookie and forwards the full path.
+// Returns (port, path, ok).
+func resolveRoute(store *RouteStore, r *http.Request, w http.ResponseWriter) (int, string, bool) {
+	seg, rest := splitFirstSegment(r.URL.Path)
+	if seg != "" {
+		if port, ok := store.lookup(seg); ok {
+			// Remember this app for subsequent prefix-less requests.
+			http.SetCookie(w, &http.Cookie{
+				Name: routeCookie, Value: seg, Path: "/", SameSite: http.SameSiteLaxMode,
+			})
+			return port, rest, true
+		}
+	}
+	// Prefix-less request (asset/API/HMR): follow the affinity cookie, forwarding
+	// the full original path unchanged.
+	if c, err := r.Cookie(routeCookie); err == nil && c.Value != "" {
+		if port, ok := store.lookup(c.Value); ok {
+			return port, r.URL.Path, true
+		}
+	}
+	return 0, "", false
 }
 
 // statusRecorder captures the response status code while preserving streaming

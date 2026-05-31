@@ -12,12 +12,13 @@ type RouteStore struct {
 	mu               sync.RWMutex
 	services         map[string]Service
 	missing          map[string]int // slug → consecutive missing refreshes
+	duplicates       []Duplicate    // latest same-project multi-port info
 	deregisterCycles int
-	discover         func() ([]Service, error)
+	discover         func() ([]Service, []Duplicate, error)
 }
 
 // NewRouteStore creates an empty store. deregisterCycles < 1 is clamped to 1.
-func NewRouteStore(discover func() ([]Service, error), deregisterCycles int) *RouteStore {
+func NewRouteStore(discover func() ([]Service, []Duplicate, error), deregisterCycles int) *RouteStore {
 	if deregisterCycles < 1 {
 		deregisterCycles = 1
 	}
@@ -46,13 +47,21 @@ func (s *RouteStore) snapshot() map[string]Service {
 	return out
 }
 
-// refresh re-discovers services. Newly-seen services are returned in `added`
-// (and immediately registered/updated). Services missing for deregisterCycles
-// consecutive refreshes are removed and returned in `removed` (slugs).
-func (s *RouteStore) refresh() (added []Service, removed []string, err error) {
-	svcs, err := s.discover()
+// dupes returns the latest duplicate-instance info (same project, many ports).
+func (s *RouteStore) dupes() []Duplicate {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return append([]Duplicate(nil), s.duplicates...)
+}
+
+// refresh re-discovers services. Newly-seen slugs are returned in `added`
+// (and registered); slugs whose served port changed (e.g. the most-recent
+// instance switched) are in `repointed`; slugs missing for deregisterCycles
+// consecutive refreshes are removed and returned in `removed`.
+func (s *RouteStore) refresh() (added, repointed []Service, removed []string, err error) {
+	svcs, dups, err := s.discover()
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	next := make(map[string]Service, len(svcs))
 	for _, svc := range svcs {
@@ -61,12 +70,17 @@ func (s *RouteStore) refresh() (added []Service, removed []string, err error) {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.duplicates = dups
 
 	for slug, svc := range next {
-		if _, ok := s.services[slug]; !ok {
+		prev, ok := s.services[slug]
+		switch {
+		case !ok:
 			added = append(added, svc)
+		case prev.Port != svc.Port:
+			repointed = append(repointed, svc)
 		}
-		s.services[slug] = svc // register or update (port may change)
+		s.services[slug] = svc // register or update
 		delete(s.missing, slug)
 	}
 	for slug := range s.services {
@@ -81,6 +95,7 @@ func (s *RouteStore) refresh() (added []Service, removed []string, err error) {
 		}
 	}
 	sort.Slice(added, func(i, j int) bool { return added[i].Slug < added[j].Slug })
+	sort.Slice(repointed, func(i, j int) bool { return repointed[i].Slug < repointed[j].Slug })
 	sort.Strings(removed)
-	return added, removed, nil
+	return added, repointed, removed, nil
 }

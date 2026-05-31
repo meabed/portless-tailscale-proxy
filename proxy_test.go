@@ -18,7 +18,7 @@ import (
 
 // storeWith builds a RouteStore whose discovery returns fixed services.
 func storeWith(svcs ...Service) *RouteStore {
-	s := NewRouteStore(func() ([]Service, error) { return svcs, nil }, 5)
+	s := NewRouteStore(func() ([]Service, []Duplicate, error) { return svcs, nil, nil }, 5)
 	s.refresh()
 	return s
 }
@@ -152,6 +152,55 @@ func TestHandler_proxiesUpgrade(t *testing.T) {
 	got, _ := br.ReadString('\n')
 	if !strings.Contains(got, "echo:hello") {
 		t.Fatalf("relay failed, got %q", got)
+	}
+}
+
+// TestHandler_cookieAffinity verifies that a prefix-less asset/API request
+// (e.g. /_next/static/app.js) is routed to the app the browser last opened,
+// via the tsp_route cookie — and that the cookie is set on the prefixed visit.
+func TestHandler_cookieAffinity(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Echo-Path", r.URL.Path)
+		io.WriteString(w, "ok")
+	}))
+	defer backend.Close()
+	port := mustPort(t, backend.URL)
+	store := storeWith(Service{Slug: "web", Port: port, Runtime: "node"})
+	h := newHandler(store, false)
+
+	// 1. Visit the prefixed app URL → routed (stripped) AND sets the affinity cookie.
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/web/dashboard", nil))
+	if got := rec.Result().Header.Get("X-Echo-Path"); got != "/dashboard" {
+		t.Fatalf("prefixed visit: backend path = %q, want /dashboard", got)
+	}
+	var cookie *http.Cookie
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == routeCookie {
+			cookie = c
+		}
+	}
+	if cookie == nil || cookie.Value != "web" {
+		t.Fatalf("expected tsp_route=web cookie to be set, got %v", rec.Result().Cookies())
+	}
+
+	// 2. A prefix-less asset request WITH the cookie → routed full-path to the app.
+	rec2 := httptest.NewRecorder()
+	req2 := httptest.NewRequest("GET", "/_next/static/app.js", nil)
+	req2.AddCookie(cookie)
+	h.ServeHTTP(rec2, req2)
+	if rec2.Code != 200 {
+		t.Fatalf("asset via cookie: status = %d", rec2.Code)
+	}
+	if got := rec2.Result().Header.Get("X-Echo-Path"); got != "/_next/static/app.js" {
+		t.Errorf("asset should forward full path, backend got %q", got)
+	}
+
+	// 3. The same asset request WITHOUT a cookie → 404 (no affinity).
+	rec3 := httptest.NewRecorder()
+	h.ServeHTTP(rec3, httptest.NewRequest("GET", "/_next/static/app.js", nil))
+	if rec3.Code != 404 {
+		t.Errorf("asset without cookie should 404, got %d", rec3.Code)
 	}
 }
 

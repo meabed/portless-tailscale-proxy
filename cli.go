@@ -162,8 +162,8 @@ func cmdStart(argv []string) int {
 
 	// One Discoverer + one store, refreshed on a ticker. The store debounces
 	// de-registration so brief restarts don't flap routes.
-	store := NewRouteStore(func() ([]Service, error) { return disc.Discover(dcfg) }, o.deregisterCycles)
-	if _, _, err := store.refresh(); err != nil {
+	store := NewRouteStore(func() ([]Service, []Duplicate, error) { return disc.Discover(dcfg) }, o.deregisterCycles)
+	if _, _, _, err := store.refresh(); err != nil {
 		log.Printf("warn: initial discovery failed: %v", err)
 	}
 
@@ -196,6 +196,7 @@ func cmdStart(argv []string) int {
 	if node, nerr := nodeDNSName(runner); nerr == nil {
 		fmt.Println("\nServices:")
 		printServiceURLs(store.snapshot(), node, o.httpsPort)
+		printDuplicateNotes(store.dupes())
 		fmt.Println()
 	}
 
@@ -343,7 +344,7 @@ func queryConfig(argv []string) (Mode, discoverConfig, int) {
 
 // printDiscovered lists discovered services with their public URLs.
 func printDiscovered(dcfg discoverConfig, mode Mode, httpsPort int) int {
-	svcs, err := newDiscoverer(execRunner{}).Discover(dcfg)
+	svcs, dups, err := newDiscoverer(execRunner{}).Discover(dcfg)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "discovery failed: %v\n", err)
 		return 1
@@ -364,19 +365,12 @@ func printDiscovered(dcfg discoverConfig, mode Mode, httpsPort int) int {
 	}
 	for _, slug := range sortedSlugs(snap) {
 		s := snap[slug]
-		rt := s.Runtime
-		if rt == "" {
-			rt = "?"
-		}
-		dir := s.Dir
-		if dir == "" {
-			dir = "—"
-		}
-		fmt.Printf("  %-22s %-6s :%d   %s\n", slug, rt, s.Port, dir)
+		fmt.Printf("  %-26s %-6s :%d  pid %d  %s\n", slug, runtimeOr(s.Runtime), s.Port, s.PID, dirOr(s.Dir))
 		if nerr == nil {
 			fmt.Printf("    %s/%s/\n", publicBase(node, httpsPort), slug)
 		}
 	}
+	printDuplicateNotes(dups)
 	return 0
 }
 
@@ -385,6 +379,18 @@ func printServiceURLs(snap map[string]Service, node string, httpsPort int) {
 	base := publicBase(node, httpsPort)
 	for _, slug := range sortedSlugs(snap) {
 		fmt.Printf("  %s/%s/  →  127.0.0.1:%d\n", base, slug, snap[slug].Port)
+	}
+}
+
+// printDuplicateNotes warns about projects listening on multiple ports and which
+// instance is being served (the most recent), so the choice is transparent.
+func printDuplicateNotes(dups []Duplicate) {
+	if len(dups) == 0 {
+		return
+	}
+	fmt.Println("\nNote — these projects listen on multiple ports; serving the most recent:")
+	for _, d := range dups {
+		fmt.Printf("  %s: %s\n", d.Slug, portList(d))
 	}
 }
 
