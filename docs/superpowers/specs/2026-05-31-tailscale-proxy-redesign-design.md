@@ -235,6 +235,29 @@ Discovered services (ports 3000-5000, public Funnel):
 - **Proxy** — unchanged tests (routing, strip, 404/502, WebSocket, logging).
 - Real `tailscale`/`lsof` are not invoked in CI (runners injected/faked).
 
+## Amendment (2026-05-31)
+
+Three changes after initial approval:
+
+1. **Runtimes trimmed.** Default known web runtimes are **`node`, `bun`, `deno`**
+   only. `python`/`ruby`/`php` are removed from the defaults (still includable via
+   `--runtimes python,...` or `--all`).
+2. **Distribution = npx + Homebrew only.** Drop the `curl | sh` installer
+   (`install.sh` removed) and stop advertising `go install`. **GitHub Releases**
+   remain (the artifact source that the Homebrew cask and the npm per-platform
+   packages pull from); goreleaser still builds the cross-platform binaries.
+3. **`tsp update`** self-update command:
+   - Queries `https://api.github.com/repos/meabed/tailscale-proxy/releases/latest`
+     for the latest tag; compares to the built-in `version`.
+   - Detects install method from the executable path:
+     - Homebrew (`/Cellar/`, `/Caskroom/`, `/homebrew/`) → instructs `brew upgrade tsp`.
+     - npm (`/node_modules/`) → instructs `npm i -g tailscale-proxy@latest`.
+     - Standalone → downloads the matching release archive
+       (`tsp_<os>_<arch>.tar.gz`/`.zip`), extracts the binary, and atomically
+       replaces the running executable (Unix: rename-over-self; Windows:
+       rename self to `.old`, move new into place).
+   - Stdlib only (`net/http`, `archive/tar`, `compress/gzip`, `archive/zip`).
+
 ## Out of scope (YAGNI)
 
 - Tailscale Services (per-service VIP hostnames) — heavier setup (tags + admin
