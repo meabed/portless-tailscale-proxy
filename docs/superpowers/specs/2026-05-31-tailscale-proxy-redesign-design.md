@@ -258,6 +258,36 @@ Three changes after initial approval:
        rename self to `.old`, move new into place).
    - Stdlib only (`net/http`, `archive/tar`, `compress/gzip`, `archive/zip`).
 
+## Amendment 2 (2026-05-31) — config, debounce, default command
+
+1. **Single port or range.** `--ports` accepts `3000-5000` or a single `4000`
+   (→ inclusive `{4000,4000}`).
+2. **Config file** `~/.tailscale-proxy/config.json` with sensible defaults:
+   ```json
+   {
+     "ports": "3000-5000", "all": false, "runtimes": "", "private": false,
+     "port": 8443, "interval": 20, "httpsPort": 443,
+     "logRequests": true, "deregisterCycles": 5
+   }
+   ```
+   Loaded at startup; **CLI flags override config values** (flags' defaults are
+   seeded from the loaded config). A missing file → built-in defaults.
+3. **`tsp configure [flags]`** — loads current config (or defaults), applies any
+   provided flags, writes `config.json`, and prints the saved config + path.
+4. **`start` is the default command.** Running `tsp` (no subcommand), or `tsp`
+   followed directly by flags (`tsp --private`), runs `start` using the saved
+   config. Explicit subcommands (`list`, `status`, …) still work.
+5. **Startup transparency.** `start` prints whether it loaded the config file (and
+   its path) or fell back to defaults, plus the effective parameters (ports, mode,
+   proxy port, interval, runtimes/all, de-register cycles).
+6. **Discovery logging.** Each newly discovered service is logged
+   (`discovered <slug>  <runtime>  :<port>  <dir>`).
+7. **De-register debounce.** A service that disappears from discovery is kept for
+   `deregisterCycles` (default 5) consecutive missing scans before being removed
+   and logged (`de-registered <slug> (gone N scans)`). Prevents flapping on
+   restarts. The `RouteStore` tracks a per-slug missing-cycle counter; `refresh()`
+   returns the newly-added `[]Service` and the removed `[]string` slugs.
+
 ## Out of scope (YAGNI)
 
 - Tailscale Services (per-service VIP hostnames) — heavier setup (tags + admin
