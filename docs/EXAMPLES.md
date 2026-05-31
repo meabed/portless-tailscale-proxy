@@ -184,12 +184,18 @@ Services:
 ```
 
 Restart a server and `tsp` picks up the new process automatically (it keeps the
-old route for a few scans to avoid flapping). If the same project ends up on two
-ports, `tsp` serves the most recent one and tells you:
+old route for a few scans to avoid flapping). When one project folder runs more
+than one server, the process on the **lowest port** becomes the main `/<slug>/` and
+the others get a `-<port>` suffix — all stay reachable, and `tsp` prints the map:
 
 ```
-note: "web" listens on 2 ports [:4501(pid 78327)←used, :4206(pid 78327)] — serving :4501 (most recent)
+Note — these projects expose multiple services (main + suffixed):
+  ~/work/help-ai/apps/web:
+    /web/       →  :3087 (bun, pid 78327)   [main]
+    /web-4983/  →  :4983 (node, pid 79001)
 ```
+
+(A single process listening on several ports collapses to its lowest port.)
 
 ---
 

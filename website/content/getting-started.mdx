@@ -92,4 +92,5 @@ tsp
 ```
 
 Restart a server and `tsp` picks up the new process automatically. If a project
-ends up on two ports, it serves the most recent one and tells you which.
+folder runs more than one server, the lowest-port one is the main `/<slug>/` and
+the others get a `-<port>` suffix — all stay reachable, and `tsp` prints the map.

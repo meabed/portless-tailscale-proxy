@@ -45,12 +45,13 @@ listening, names each by its project folder, and proxies to it.
 3. **Slug** = the nearest project-root folder name walking up from the working
    directory (markers: `package.json`, `.git`, `go.mod`, `pyproject.toml`,
    `Cargo.toml`, `deno.json`, `composer.json`, `Gemfile`). No cwd → `<runtime>-<port>`.
-4. **Collapse duplicates** — all listeners belonging to the **same project**
-   (same project-root directory) are collapsed into one service, serving the
-   **most recent instance** (highest PID, then higher port) under a clean,
-   port-free slug. The dropped instances are surfaced in the logs / `list` /
-   `status` so the choice is transparent. Two *distinct* projects that happen to
-   share a folder name still get a `-<port>` suffix to stay unique.
+4. **Resolve duplicates** — within one **project** (same project-root directory)
+   the process on the **lowest port** becomes the main service under a clean,
+   port-free slug; any other process in the same folder gets a `-<port>` suffix so
+   it stays reachable. A single process listening on several ports collapses to its
+   lowest port. All services are surfaced in the logs / `list` / `status`. Two
+   *distinct* projects that happen to share a folder name also get a `-<port>`
+   suffix to stay unique.
 
 ## Routing
 

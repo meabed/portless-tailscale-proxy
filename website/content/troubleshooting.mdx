@@ -163,11 +163,14 @@ tsp --runtimes node,bun,python # add runtimes
 tsp --all                      # every listener, incl. unrecognized binaries
 ```
 
-## The same project shows on multiple ports
+## The same project shows on multiple ports / a slug has a `-<port>` suffix
 
-`tsp` collapses every listener of the same project and serves the most recent
-(highest PID, then higher port). The chosen/dropped ports+pids show in `tsp list`
-and the logs. Stop the stale instance (its pid is printed) if the wrong one wins.
+Expected. Within one project folder, `tsp` keeps the process on the **lowest port**
+as the "main" service (clean slug) and gives any *other* process in the same folder
+a `-<port>` suffix so it stays reachable — e.g. `bun dev` on `:3087` → `myapp/`,
+an aux tool on `:4983` → `myapp-4983/`. A single process on several ports is
+collapsed to its lowest port. Two **distinct** projects sharing a folder name also
+get a `-<port>` suffix. Run `tsp list` for the canonical slugs.
 
 ## `lsof` not found (macOS/Linux)
 

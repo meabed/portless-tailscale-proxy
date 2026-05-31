@@ -52,20 +52,16 @@ backend. If a page still looks wrong:
   is per-browser. Use separate browsers/profiles, or re-visit the `/<slug>/` URL to
   switch which app the tab is pinned to.
 
-## The same project shows on multiple ports
+## The same project shows on multiple ports / a slug has a `-<port>` suffix
 
-`tsp` collapses every listener of the **same project** into one entry and serves the
-**most recent** instance (highest PID, then higher port) — so a restart leftover or
-a dev server that binds two ports won't create duplicate routes. The chosen and
-dropped ports/pids are shown in `tsp list`/`status` and the startup logs. If the
-wrong instance is chosen, stop the stale one (the logs print its pid).
-
-## Wrong project name, or a `-<port>` suffix on a slug
-
-The slug is the nearest project-root folder (the directory containing
-`package.json`/`.git`/etc.). Two **distinct** projects that share a folder name get a
-`-<port>` suffix so each stays unique — that's expected. Check `tsp list` for the
-canonical slugs.
+This is expected. The slug is the nearest project-root folder (the one with
+`package.json`/`.git`/etc.). Within one project folder, `tsp` keeps the process on
+the **lowest port** as the "main" service (clean slug) and gives any *other* process
+in the same folder a `-<port>` suffix so it stays reachable — e.g. `bun dev` on
+`:3087` → `myapp/`, while an aux tool on `:4983` → `myapp-4983/`. A single process
+listening on several ports is collapsed to its lowest port (one entry). Two
+**distinct** projects that share a folder name also get a `-<port>` suffix to stay
+unique. Run `tsp list` for the canonical slugs.
 
 ## A service disappeared but the route lingers (or vice-versa)
 
