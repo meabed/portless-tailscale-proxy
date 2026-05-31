@@ -37,7 +37,6 @@ jobs:
       contents: write # semantic-release pushes tags + GitHub release
       issues: write # release comments on released issues
       pull-requests: write # release comments on released PRs
-      id-token: write # npm provenance (sigstore attestations)
     steps:
       - name: Check release secrets
         id: gate
