@@ -16,6 +16,13 @@ import (
 	"testing"
 )
 
+// storeWith builds a RouteStore whose discovery returns fixed services.
+func storeWith(svcs ...Service) *RouteStore {
+	s := NewRouteStore(func() ([]Service, error) { return svcs, nil }, 5)
+	s.refresh()
+	return s
+}
+
 func TestSplitFirstSegment(t *testing.T) {
 	cases := []struct {
 		in, seg, rest string
@@ -45,8 +52,7 @@ func TestHandler_routesAndStripsPrefix(t *testing.T) {
 	defer backend.Close()
 
 	port := mustPort(t, backend.URL)
-	store := NewRouteStore("")
-	store.routes = map[string]int{"svc.local": port}
+	store := storeWith(Service{Slug: "svc.local", Port: port, Runtime: "node"})
 
 	h := newHandler(store, false)
 	rec := httptest.NewRecorder()
@@ -68,8 +74,7 @@ func TestHandler_routesAndStripsPrefix(t *testing.T) {
 }
 
 func TestHandler_unknownHostReturns404Index(t *testing.T) {
-	store := NewRouteStore("")
-	store.routes = map[string]int{"known.local": 4000}
+	store := storeWith(Service{Slug: "known.local", Port: 4000, Runtime: "node"})
 	h := newHandler(store, false)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest("GET", "/nope.local/x", nil))
@@ -82,8 +87,7 @@ func TestHandler_unknownHostReturns404Index(t *testing.T) {
 }
 
 func TestHandler_deadBackendReturns502(t *testing.T) {
-	store := NewRouteStore("")
-	store.routes = map[string]int{"dead.local": 1} // nothing listens on :1
+	store := storeWith(Service{Slug: "dead.local", Port: 1, Runtime: "node"}) // nothing listens on :1
 	h := newHandler(store, false)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest("GET", "/dead.local/x", nil))
@@ -121,8 +125,7 @@ func TestHandler_proxiesUpgrade(t *testing.T) {
 	defer backend.Close()
 
 	port := mustPort(t, backend.URL)
-	store := NewRouteStore("")
-	store.routes = map[string]int{"ws.local": port}
+	store := storeWith(Service{Slug: "ws.local", Port: port, Runtime: "node"})
 
 	front := httptest.NewServer(newHandler(store, false))
 	defer front.Close()
@@ -158,8 +161,7 @@ func TestHandler_logsRequests(t *testing.T) {
 	}))
 	defer backend.Close()
 	port := mustPort(t, backend.URL)
-	store := NewRouteStore("")
-	store.routes = map[string]int{"svc.local": port}
+	store := storeWith(Service{Slug: "svc.local", Port: port, Runtime: "node"})
 
 	var buf bytes.Buffer
 	log.SetOutput(&buf)
@@ -177,8 +179,7 @@ func TestHandler_logsRequests(t *testing.T) {
 }
 
 func TestHandler_loggingDisabledIsSilent(t *testing.T) {
-	store := NewRouteStore("")
-	store.routes = map[string]int{"svc.local": 4000}
+	store := storeWith(Service{Slug: "svc.local", Port: 4000, Runtime: "node"})
 	var buf bytes.Buffer
 	log.SetOutput(&buf)
 	defer log.SetOutput(os.Stderr)

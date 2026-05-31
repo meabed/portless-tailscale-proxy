@@ -34,18 +34,23 @@ func writeIndex(w http.ResponseWriter, store *RouteStore, status int) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(status)
 	snap := store.snapshot()
-	hosts := make([]string, 0, len(snap))
-	for h := range snap {
-		hosts = append(hosts, h)
+	slugs := make([]string, 0, len(snap))
+	for s := range snap {
+		slugs = append(slugs, s)
 	}
-	sort.Strings(hosts)
-	fmt.Fprintln(w, "portless-tailscale-proxy — registered services:")
-	if len(hosts) == 0 {
-		fmt.Fprintln(w, "  (none — is `portless` running? try `ptp doctor`)")
+	sort.Strings(slugs)
+	fmt.Fprintln(w, "tailscale-proxy — registered services:")
+	if len(slugs) == 0 {
+		fmt.Fprintln(w, "  (none discovered — start a dev server in range, or try --all / --ports, then `tsp doctor`)")
 		return
 	}
-	for _, h := range hosts {
-		fmt.Fprintf(w, "  /%s/  ->  127.0.0.1:%d\n", h, snap[h])
+	for _, s := range slugs {
+		svc := snap[s]
+		rt := svc.Runtime
+		if rt == "" {
+			rt = "?"
+		}
+		fmt.Fprintf(w, "  /%s/  →  127.0.0.1:%d  (%s)\n", s, svc.Port, rt)
 	}
 }
 
@@ -81,7 +86,7 @@ func newHandler(store *RouteStore, logRequests bool) http.Handler {
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 			w.WriteHeader(http.StatusBadGateway)
-			fmt.Fprintf(w, "portless-tailscale-proxy: upstream error: %v\n", err)
+			fmt.Fprintf(w, "tailscale-proxy: upstream error: %v\n", err)
 		},
 	}
 
