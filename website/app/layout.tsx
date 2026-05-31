@@ -17,7 +17,7 @@ export const metadata = {
 
 // Set the theme before first paint to avoid a flash; honors the stored choice,
 // otherwise falls through to the CSS prefers-color-scheme default.
-const noFlash = `(function(){try{var t=localStorage.getItem('tsp-theme');if(t==='dark'||t==='light'){document.documentElement.dataset.theme=t}}catch(e){}})();`;
+const noFlash = `(function(){try{var d=document.documentElement,t=localStorage.getItem('tsp-theme');if(t==='dark'||t==='light'){d.dataset.theme=t}var dark=t?t==='dark':matchMedia('(prefers-color-scheme: dark)').matches;d.classList.toggle('dark',dark);d.classList.toggle('light',!dark)}catch(e){}})();`;
 
 export default function RootLayout({
   children,

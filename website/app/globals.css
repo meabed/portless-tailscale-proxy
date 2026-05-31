@@ -50,13 +50,13 @@
     --fg: oklch(90% 0.01 256);
     --fg-strong: oklch(97% 0.008 256);
     --muted: oklch(66% 0.012 256);
-    --border: oklch(27% 0.012 256);
-    --border-strong: oklch(34% 0.014 256);
-    --accent: oklch(72% 0.14 256);
-    --accent-press: oklch(78% 0.13 256);
-    --accent-soft: oklch(72% 0.14 256 / 0.16);
-    --code-bg: oklch(20% 0.013 256);
-    --code-fg: oklch(86% 0.012 256);
+    --border: oklch(30% 0.012 256);
+    --border-strong: oklch(38% 0.015 256);
+    --accent: oklch(74% 0.15 256);
+    --accent-press: oklch(80% 0.13 256);
+    --accent-soft: oklch(74% 0.15 256 / 0.18);
+    --code-bg: oklch(21% 0.014 256);
+    --code-fg: oklch(88% 0.012 256);
     --shadow: 0 1px 2px oklch(0% 0 0 / 0.3), 0 10px 30px oklch(0% 0 0 / 0.35);
   }
 }
@@ -68,13 +68,13 @@
   --fg: oklch(90% 0.01 256);
   --fg-strong: oklch(97% 0.008 256);
   --muted: oklch(66% 0.012 256);
-  --border: oklch(27% 0.012 256);
-  --border-strong: oklch(34% 0.014 256);
-  --accent: oklch(72% 0.14 256);
-  --accent-press: oklch(78% 0.13 256);
-  --accent-soft: oklch(72% 0.14 256 / 0.16);
-  --code-bg: oklch(20% 0.013 256);
-  --code-fg: oklch(86% 0.012 256);
+  --border: oklch(30% 0.012 256);
+  --border-strong: oklch(38% 0.015 256);
+  --accent: oklch(74% 0.15 256);
+  --accent-press: oklch(80% 0.13 256);
+  --accent-soft: oklch(74% 0.15 256 / 0.18);
+  --code-bg: oklch(21% 0.014 256);
+  --code-fg: oklch(88% 0.012 256);
   --shadow: 0 1px 2px oklch(0% 0 0 / 0.3), 0 10px 30px oklch(0% 0 0 / 0.35);
 }
 
@@ -236,7 +236,17 @@ a:hover { text-decoration: underline; text-underline-offset: 2px; }
   line-height: 1.6;
   box-shadow: var(--shadow);
 }
-.tsp-content pre code { font-family: var(--font-mono); }
+.tsp-content pre code { font-family: var(--font-mono); background: none; }
+
+/* Shiki dual-theme fallback.
+ * Code is highlighted with two themes (github-light / github-dark) emitted as
+ * --shiki-light / --shiki-dark custom props; the light tokens apply by default.
+ * Nextra switches to the dark tokens on the html.dark class (which the layout +
+ * toggle now set alongside [data-theme]). This is a belt-and-suspenders rule
+ * keyed off our own [data-theme] in case that class is ever absent. */
+:root[data-theme="dark"] .nextra-code span {
+  color: var(--shiki-dark) !important;
+}
 
 .tsp-content table {
   width: 100%;

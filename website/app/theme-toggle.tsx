@@ -28,7 +28,10 @@ export function ThemeToggle() {
   function toggle() {
     const next = dark ? "light" : "dark";
     setDark(!dark);
-    document.documentElement.dataset.theme = next;
+    const root = document.documentElement;
+    root.dataset.theme = next;
+    root.classList.toggle("dark", next === "dark");
+    root.classList.toggle("light", next === "light");
     try {
       localStorage.setItem("tsp-theme", next);
     } catch {}

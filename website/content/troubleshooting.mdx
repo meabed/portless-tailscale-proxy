@@ -31,13 +31,19 @@ backend.
 - Don't actively use two different apps in the **same browser** at once — affinity
   is per-browser. Use separate browser profiles, or re-visit the `/<slug>/` URL.
 
-## Reaching services from a Docker container ("Failed to resolve …ts.net")
+## Reaching services from a container ("Failed to resolve …ts.net")
 
-Containers don't use your host's MagicDNS, so a tailnet name won't resolve inside
-them. Two fixes:
+This error means the container's DNS can't resolve the name. The fix depends on
+**where the container runs** and **which mode you used** — `*.ts.net` resolves two
+different ways:
 
-**A. Talk to the `tsp` proxy directly — no MagicDNS, no Tailscale (simplest).**
-Bind the proxy to a reachable address, then hit it by path from the container:
+- **Funnel (public, default)** — the name is in **public DNS**; any host resolves it.
+- **Serve (`--private`)** — the name only resolves via **MagicDNS inside your
+  tailnet**, pointing at a `100.x` address only tailnet members can route.
+
+### Container on the same machine as `tsp` (Docker Desktop)
+
+Skip DNS — talk to the proxy directly by path. Bind it to a reachable address:
 
 ```bash
 tsp --bind 0.0.0.0
@@ -49,15 +55,57 @@ curl http://host.docker.internal:8443/<slug>/        # Docker Desktop
 # Linux: docker run --add-host=host.docker.internal:host-gateway ...
 ```
 
-This routes `container → host tsp → 127.0.0.1:<service>` with no DNS or tailnet.
-⚠ `0.0.0.0` exposes the proxy to your LAN — bind a specific interface (e.g. the
-docker bridge `--bind 172.17.0.1`) to narrow it.
+`container → host tsp → 127.0.0.1:<service>`, no DNS or tailnet involved.
 
-**B. Make the tailnet name resolve in the container** (if it's on the tailnet):
+<Callout type="warning">
+  `0.0.0.0` exposes the proxy to your LAN — bind a specific interface (e.g. the
+  docker bridge `--bind 172.17.0.1`) to narrow it. `host.docker.internal` only
+  points at the **same host**, so this does **not** work for a remote pod.
+</Callout>
+
+### Container on a remote host / Kubernetes (the usual cause)
+
+A remote pod can't reach `host.docker.internal`, so use the exposure URL — but how
+you make it resolve depends on the mode.
+
+**Funnel (public, default):** the name is in public DNS, so a pod with working
+internet DNS should already resolve it. If the pod's resolver is locked down, pin
+the name to the public Funnel ingress IP (`hostAliases` is the k8s `--add-host`):
 
 ```bash
-docker run --add-host "your-node.ts.net:$(tailscale ip -4)" ...
+dig +short your-node.ts.net @1.1.1.1     # → public ingress IP, e.g. 209.177.145.192
 ```
+
+```yaml
+# Kubernetes pod spec
+spec:
+  hostAliases:
+    - ip: "209.177.145.192"
+      hostnames: ["your-node.ts.net"]
+```
+
+```bash
+# plain Docker on a remote host
+docker run --add-host "your-node.ts.net:209.177.145.192" ...
+```
+
+**Serve (`--private`):** the name and its `100.x` address only work from inside the
+tailnet — there's no public IP to point at. The remote pod must **join the
+tailnet**: run a Tailscale sidecar (or the
+[Tailscale Kubernetes operator](https://tailscale.com/kb/1185/kubernetes)). Once
+it's on the tailnet, MagicDNS resolves the name and `100.x` routes normally. If the
+pod can already route `100.x`, map the name to the tailnet IP instead
+(`tailscale ip -4`):
+
+```bash
+docker run --add-host "your-node.ts.net:100.x.y.z" ...
+```
+
+<Callout type="info">
+  Rule of thumb: remote container that stays **off** the tailnet → use **Funnel**
+  and resolve the public name. Remote container you can put **on** the tailnet →
+  use **Serve** with a Tailscale sidecar and let MagicDNS do its job.
+</Callout>
 
 ## No services found
 

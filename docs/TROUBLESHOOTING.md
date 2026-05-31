@@ -75,36 +75,81 @@ server restarts. Lower it (`--deregister-cycles 1`) for immediate removal, or ra
 it for longer grace. New services appear on the next scan (`--interval`, default 20s;
 lower it for faster pickup).
 
-## Reaching services from a Docker container ("Failed to resolve …ts.net")
+## Reaching services from a container ("Failed to resolve …ts.net")
 
-Containers don't use your host's MagicDNS, so a tailnet name like
-`bigfoot.quoll-adhara.ts.net` won't resolve inside them. Two ways to fix it:
+`Failed to resolve 'bigfoot.quoll-adhara.ts.net'` from a container means the
+container's DNS can't resolve that name. **The right fix depends on where the
+container runs and whether you used Funnel (public) or Serve (`--private`).**
 
-**A. Talk to the `tsp` proxy directly — no MagicDNS, no Tailscale (simplest).**
-Bind the proxy to a reachable address, then have the container hit it by path:
+`*.ts.net` names resolve two different ways:
+
+- **Funnel (public, the default)** — the name is in **public DNS**. Any host with
+  normal internet DNS resolves it, tailnet or not.
+- **Serve (`--private`)** — the name only resolves via **MagicDNS inside your
+  tailnet**, and it points at a `100.x` address only routable by tailnet members.
+
+### Container on the **same machine** as `tsp` (e.g. Docker Desktop)
+
+Skip DNS entirely — talk to the proxy directly by path. Bind it to a reachable
+address:
 
 ```bash
 tsp --bind 0.0.0.0            # proxy now listens on all interfaces
 ```
 ```bash
-# from inside the container — routes by /<slug>/ to your local dev server:
+# inside the container — routes /<slug>/ to your local dev server:
 curl http://host.docker.internal:8443/<slug>/        # Docker Desktop (mac/win)
-# Linux: start the container with
-#   docker run --add-host=host.docker.internal:host-gateway ...
-# or use the docker bridge gateway IP (often 172.17.0.1).
+# Linux: docker run --add-host=host.docker.internal:host-gateway ...
+#        (or use the docker bridge gateway IP, often 172.17.0.1)
 ```
 
-This routes `container → host tsp → 127.0.0.1:<service>` with no DNS or tailnet
-involved. ⚠ `0.0.0.0` exposes the proxy to your LAN — bind a specific interface
-(e.g. `--bind 172.17.0.1`, the docker bridge) to narrow it.
+`container → host tsp → 127.0.0.1:<service>`, no DNS or tailnet involved.
+⚠ `0.0.0.0` exposes the proxy to your LAN — bind a specific interface
+(e.g. `--bind 172.17.0.1`, the docker bridge) to narrow it. `host.docker.internal`
+only points at the **same host**, so this does **not** work for a remote pod.
 
-**B. Make the tailnet name resolve in the container.**
-If the container is on the tailnet (or can route `100.x`), map the name to your
-node's tailnet IP so HTTPS certs still match:
+### Container on a **remote host / Kubernetes** (the usual cause)
+
+A remote pod can't reach `host.docker.internal`, so use the exposure URL — but how
+you make it resolve depends on the mode:
+
+**If you exposed publicly (Funnel — default):** the name is in public DNS, so a pod
+with working internet DNS should already resolve it. If it still fails, the pod's
+resolver is locked down — pin the name to the public Funnel ingress IP:
 
 ```bash
-docker run --add-host "bigfoot.quoll-adhara.ts.net:$(tailscale ip -4)" ...
+dig +short bigfoot.quoll-adhara.ts.net @1.1.1.1     # → public ingress IP, e.g. 209.177.145.192
 ```
+```yaml
+# Kubernetes pod spec — the equivalent of docker --add-host:
+spec:
+  hostAliases:
+    - ip: "209.177.145.192"
+      hostnames: ["bigfoot.quoll-adhara.ts.net"]
+```
+```bash
+# plain Docker on a remote host:
+docker run --add-host "bigfoot.quoll-adhara.ts.net:209.177.145.192" ...
+```
+
+**If you exposed privately (`--private` Serve):** the name and its `100.x` address
+only work **from inside the tailnet**, so a remote pod must *join* the tailnet —
+there's no public IP to point at. Either:
+
+- Run **Tailscale in the pod** (a sidecar container, or the Tailscale Kubernetes
+  operator / subnet router). Once the pod is on the tailnet, MagicDNS resolves the
+  name and `100.x` routes normally — nothing else to change. ([k8s operator docs](https://tailscale.com/kb/1185/kubernetes))
+- Or, if the pod can already route `100.x`, map the name to the tailnet IP so the
+  HTTPS cert still matches:
+  ```bash
+  # tailnet IP of the node running tsp:  tailscale ip -4
+  docker run --add-host "bigfoot.quoll-adhara.ts.net:100.x.y.z" ...
+  ```
+  (k8s: the same `hostAliases` block, with the `100.x` IP.)
+
+**Rule of thumb:** remote container that must stay off the tailnet → use **Funnel**
+and resolve the public name. Remote container you can put **on** the tailnet → use
+**Serve** with a Tailscale sidecar and let MagicDNS do its job.
 
 ## `502` upstream error
 
