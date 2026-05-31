@@ -1,0 +1,37 @@
+version: 2
+project_name: ptp
+before:
+  hooks:
+    - go mod tidy
+builds:
+  - id: ptp
+    main: .
+    binary: ptp
+    env: [CGO_ENABLED=0]
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+    goos: [darwin, linux, windows]
+    goarch: [amd64, arm64]
+archives:
+  - id: ptp
+    name_template: "ptp_{{ .Os }}_{{ .Arch }}"
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+checksum:
+  name_template: "checksums.txt"
+brews:
+  - name: ptp
+    repository:
+      owner: meabed
+      name: homebrew-tap
+    homepage: "https://github.com/meabed/portless-tailscale-proxy"
+    description: "Route a Tailscale Funnel to portless dev servers by URL path"
+    license: "MIT"
+    install: |
+      bin.install "ptp"
+release:
+  github:
+    owner: meabed
+    name: portless-tailscale-proxy

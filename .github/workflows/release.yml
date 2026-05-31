@@ -1,0 +1,48 @@
+name: release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-go@v5
+        with: { go-version: "stable" }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+      - name: Run goreleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+      - name: Build npm platform packages
+        run: node npm/build-platform-packages.mjs "${GITHUB_REF_NAME#v}"
+      - name: Publish per-platform npm packages
+        run: |
+          for d in npm/dist/*/; do
+            (cd "$d" && npm publish --access public)
+          done
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Publish launcher package
+        run: |
+          cd npm/portless-tailscale-proxy
+          npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version --allow-same-version
+          node -e '
+            const fs=require("fs");const v=process.env.GITHUB_REF_NAME.replace(/^v/,"");
+            const p=JSON.parse(fs.readFileSync("package.json"));
+            for(const k of Object.keys(p.optionalDependencies)) p.optionalDependencies[k]=v;
+            fs.writeFileSync("package.json",JSON.stringify(p,null,2)+"\n");
+          '
+          npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
