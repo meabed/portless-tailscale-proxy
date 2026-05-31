@@ -68,8 +68,8 @@ func TestBuildServices_filtersAndDisambiguates(t *testing.T) {
 	listeners := []listener{
 		{Port: 4983, PID: 1, Comm: "/usr/bin/node", Cwd: dirA},
 		{Port: 4222, PID: 2, Comm: "nats-server", Cwd: ""}, // unknown runtime -> dropped
-		{Port: 3000, PID: 3, Comm: "bun", Cwd: ""},          // no cwd -> bun-3000
-		{Port: 3001, PID: 4, Comm: "bun", Cwd: ""},          // no cwd -> bun-3001
+		{Port: 3000, PID: 3, Comm: "bun", Cwd: ""},         // no cwd -> bun-3000
+		{Port: 3001, PID: 4, Comm: "bun", Cwd: ""},         // no cwd -> bun-3001
 	}
 	svcs := buildServices(listeners, false, nil)
 	got := map[string]Service{}
@@ -115,9 +115,35 @@ func TestParsePortRange(t *testing.T) {
 	if err != nil || r.Lo != 3000 || r.Hi != 5000 {
 		t.Fatalf("got %+v err %v", r, err)
 	}
-	for _, bad := range []string{"5000-3000", "abc", "3000", "0-10", "1-70000"} {
+	// Single port is accepted and yields an inclusive single-port range.
+	r, err = parsePortRange("4000")
+	if err != nil || r.Lo != 4000 || r.Hi != 4000 {
+		t.Fatalf("single port: got %+v err %v", r, err)
+	}
+	for _, bad := range []string{"5000-3000", "abc", "0-10", "1-70000", "0", "70000", "-5"} {
 		if _, err := parsePortRange(bad); err == nil {
 			t.Errorf("expected error for %q", bad)
+		}
+	}
+}
+
+func TestDisambiguate_tripleCollisionWithExistingPortSlug(t *testing.T) {
+	// Two services slug to "proj" (ports 4001, 4002); a third already slugs to
+	// "proj-4001". After the -port pass, the renamed proj@4001 collides with the
+	// pre-existing proj-4001 → both get a -<pid> tie-break so all slugs are unique.
+	svcs := []Service{
+		{Slug: "proj", Port: 4001, PID: 11, Runtime: "node"},
+		{Slug: "proj", Port: 4002, PID: 12, Runtime: "node"},
+		{Slug: "proj-4001", Port: 4003, PID: 13, Runtime: "node"},
+	}
+	disambiguate(svcs)
+	seen := map[string]int{}
+	for _, s := range svcs {
+		seen[s.Slug]++
+	}
+	for slug, n := range seen {
+		if n > 1 {
+			t.Fatalf("slug %q still collides (%d): %+v", slug, n, svcs)
 		}
 	}
 }

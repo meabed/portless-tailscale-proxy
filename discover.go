@@ -118,7 +118,9 @@ func buildServices(listeners []listener, includeAll bool, runtimes map[string]bo
 	return out
 }
 
-// disambiguate appends -<port> to any slug shared by more than one service.
+// disambiguate appends -<port> to any slug shared by more than one service, then
+// -<pid> as a final tie-break if the -<port> suffix still collides (e.g. a slug
+// that already had the -<port> form). PIDs are unique, so this always converges.
 func disambiguate(svcs []Service) {
 	counts := map[string]int{}
 	for _, s := range svcs {
@@ -129,18 +131,33 @@ func disambiguate(svcs []Service) {
 			svcs[i].Slug = svcs[i].Slug + "-" + strconv.Itoa(svcs[i].Port)
 		}
 	}
+	counts2 := map[string]int{}
+	for _, s := range svcs {
+		counts2[s.Slug]++
+	}
+	for i := range svcs {
+		if counts2[svcs[i].Slug] > 1 {
+			svcs[i].Slug = svcs[i].Slug + "-" + strconv.Itoa(svcs[i].PID)
+		}
+	}
 }
 
-// parsePortRange parses "lo-hi" into a validated PortRange.
+// parsePortRange parses "lo-hi" or a single "port" into a validated PortRange.
 func parsePortRange(s string) (PortRange, error) {
-	parts := strings.SplitN(s, "-", 2)
-	if len(parts) != 2 {
-		return PortRange{}, fmt.Errorf("invalid port range %q (want lo-hi)", s)
+	s = strings.TrimSpace(s)
+	// Single port, e.g. "4000" -> {4000, 4000}.
+	if !strings.Contains(s, "-") {
+		p, err := strconv.Atoi(s)
+		if err != nil || p < 1 || p > 65535 {
+			return PortRange{}, fmt.Errorf("invalid port %q", s)
+		}
+		return PortRange{Lo: p, Hi: p}, nil
 	}
+	parts := strings.SplitN(s, "-", 2)
 	lo, err1 := strconv.Atoi(strings.TrimSpace(parts[0]))
 	hi, err2 := strconv.Atoi(strings.TrimSpace(parts[1]))
 	if err1 != nil || err2 != nil || lo < 1 || hi < lo || hi > 65535 {
-		return PortRange{}, fmt.Errorf("invalid port range %q", s)
+		return PortRange{}, fmt.Errorf("invalid port range %q (want lo-hi or a single port)", s)
 	}
 	return PortRange{Lo: lo, Hi: hi}, nil
 }

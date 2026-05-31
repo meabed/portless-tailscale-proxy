@@ -13,7 +13,16 @@ import (
 func (d *Discoverer) listeners(rng PortRange) ([]listener, error) {
 	out, stderr, err := d.run.Run("lsof", "-nP", "-iTCP", "-sTCP:LISTEN", "-Fpcn")
 	if err != nil {
-		return nil, fmt.Errorf("lsof failed (is lsof installed?): %v\n%s", err, stderr)
+		// Distinguish "lsof not installed" from "lsof found nothing" (lsof exits
+		// non-zero with empty output when no sockets match — not an error for us).
+		if strings.Contains(err.Error(), "executable file not found") ||
+			strings.Contains(stderr, "not found") {
+			return nil, fmt.Errorf("lsof not found — install it (macOS ships it; Linux: apt/dnf install lsof)")
+		}
+		if strings.TrimSpace(out) == "" {
+			return []listener{}, nil
+		}
+		// Non-zero exit but we still got output — parse what we have.
 	}
 	ls := parseLsofListeners(out, rng)
 	if len(ls) == 0 {
