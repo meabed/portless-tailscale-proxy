@@ -1,9 +1,9 @@
 /dist/
+/dist-tarball/
 /tsp
 /tsp.exe
 *.log
 node_modules/
 npm/dist/
-npm/*/bin/
 .idea
 .remember
