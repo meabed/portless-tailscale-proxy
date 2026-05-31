@@ -6,6 +6,22 @@ import { Callout } from "nextra/components";
 
 # tailscale-proxy
 
+## ⚡ Start in one command
+
+```bash
+npx tailscale-proxy
+```
+
+No install, no config — it discovers your running dev servers and shares them all
+through one Tailscale URL. First time? Run `npx tailscale-proxy doctor` to check your
+setup, or follow the 4-step [Installation](/installation) guide.
+
+```bash
+brew install meabed/tap/tsp && tsp     # prefer a binary? install, then run `tsp`
+```
+
+---
+
 An open-source, **self-hosted [ngrok](https://ngrok.com) alternative** built on
 [Tailscale](https://tailscale.com): discover your local dev servers by **port**
 and expose them through a **single Tailscale entry** — privately
