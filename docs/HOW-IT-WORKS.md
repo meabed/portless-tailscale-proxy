@@ -13,35 +13,52 @@ to reach many local dev servers through one entry, you route by **path**.
 `tsp` does that automatically, with no per-app config. It finds whatever is
 listening, names each by its project folder, and proxies to it.
 
-## Request flow
+## Architecture
 
+```mermaid
+flowchart LR
+    C["Caller<br/>internet or tailnet"]
+    C -->|"https://bigfoot.ts.net/help-ai-web/foo"| TS
+    subgraph machine["your machine"]
+        direction TB
+        TS["tailscale funnel | serve<br/>TLS · :443 / 8443 / 10000"]
+        P["tsp proxy<br/>net/http · :8443"]
+        SCAN["discovery loop<br/>lsof·ps / netstat·tasklist"]
+        D1["127.0.0.1:4983<br/>help-ai-web · bun"]
+        D2["127.0.0.1:3000<br/>api · node"]
+        TS -->|plain HTTP| P
+        P -->|"/help-ai-web/foo → strip → /foo<br/>Host → 127.0.0.1:4983"| D1
+        P --> D2
+        SCAN -->|"slug → port map"| P
+        SCAN -.->|"scan every --interval"| D1
+        SCAN -.-> D2
+    end
 ```
-                                     ┌──────────────────────────────────────┐
-  caller (internet or tailnet)       │  your machine                        │
-                                     │                                      │
-  https://bigfoot.ts.net             │  tailscale funnel|serve (TLS, :443)  │
-    /help-ai-web/foo                 │        │  plain HTTP                  │
-                                     │        ▼                             │
-                                     │  tsp proxy (net/http, :8443)         │
-                                     │   lookup "help-ai-web" → 4983        │
-                                     │   strip segment → /foo               │
-                                     │   rewrite Host → 127.0.0.1:4983       │
-                                     │        ▼                             │
-                                     │  127.0.0.1:4983  (your dev server)    │
-                                     └──────────────────────────────────────┘
-                                              ▲ port scan every --interval s
-                                   lsof/ps (mac, linux) · netstat/tasklist (win)
-```
+
+One Tailscale entry terminates TLS and forwards plain HTTP to the local `tsp`
+proxy, which routes by the **first path segment** to the matching dev server. A
+background loop keeps the slug→port map current.
 
 ## Discovery pipeline (every `--interval` seconds)
+
+```mermaid
+flowchart TD
+    A["List listeners in port range (with PID)<br/>mac/linux: lsof -iTCP -sTCP:LISTEN · ps · cwd<br/>windows: netstat -ano · tasklist"] --> B["Classify runtime from exe basename<br/>node·bun·deno·python·ruby·php·go·java·dotnet·elixir·perl·docker"]
+    B --> C["Derive slug = nearest project-root folder<br/>(package.json · .git · go.mod · pyproject.toml · …)"]
+    C --> D["Resolve duplicates per project folder<br/>lowest port = main · others suffixed by port"]
+    D --> E["RouteStore.refresh<br/>debounced de-register (deregisterCycles)"]
+    E --> F["slug → service map"]
+```
 
 1. **List listeners** — sockets in `LISTEN` within the port range, with PID:
    - macOS/Linux: `lsof -nP -iTCP -sTCP:LISTEN -Fpcn`, enriched with `ps -o comm`
      (full runtime path) and `lsof -d cwd` (working directory).
    - Windows: `netstat -ano` + `tasklist` (no working directory available).
-2. **Classify runtime** from the executable basename: `node`, `bun`, `deno`. By
-   default only these are kept; `--all` includes everything, `--runtimes a,b`
-   overrides the set.
+2. **Classify runtime** from the executable basename — known web runtimes are
+   `node`, `bun`, `deno`, `python` (incl. `uvicorn`/`gunicorn`), `ruby` (incl.
+   `puma`), `php` (incl. `php-fpm`), `go`, `java`, `dotnet`, `elixir`, `perl`, and
+   Docker-published ports. **All known runtimes are kept by default**; `--all`
+   includes every listener, and `--runtimes a,b` restricts to a chosen set.
 3. **Slug** = the nearest project-root folder name walking up from the working
    directory (markers: `package.json`, `.git`, `go.mod`, `pyproject.toml`,
    `Cargo.toml`, `deno.json`, `composer.json`, `Gemfile`). No cwd → `<runtime>-<port>`.
@@ -54,6 +71,19 @@ listening, names each by its project folder, and proxies to it.
    suffix to stay unique.
 
 ## Routing
+
+```mermaid
+flowchart TD
+    R["Request /seg/rest?query"] --> M{"first segment<br/>matches a slug?"}
+    M -->|yes| H["strip segment · rewrite Host → 127.0.0.1:port<br/>set tsp_route cookie"]
+    M -->|"no (prefix-less asset/HMR)"| CK{"tsp_route<br/>cookie set?"}
+    CK -->|yes| FF["forward full path to the cookie's backend"]
+    CK -->|no| NF["404 + list of services"]
+    H --> UP{"backend up?"}
+    FF --> UP
+    UP -->|yes| OK["stream response<br/>(SSE flush · WebSocket upgrade)"]
+    UP -->|no| E502["502"]
+```
 
 For `/<segment>/<rest...>?<query>`:
 
@@ -101,6 +131,26 @@ browser at once isn't supported — open them in separate browsers/profiles, or
 visit each via its `/<slug>/` URL to switch.
 
 ## State, debounce, and lifecycle
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant U as tsp start
+    participant Cfg as config.json
+    participant Dr as doctor
+    participant Px as proxy (bind:port)
+    participant Ts as tailscale
+    U->>Cfg: load defaults (flags override)
+    U->>Dr: preflight checks
+    U->>Px: listen
+    U->>Ts: funnel | serve --bg <port>
+    loop every --interval
+        U->>U: discover → RouteStore.refresh (debounced)
+    end
+    Note over U,Ts: SIGINT / SIGTERM
+    U->>Px: drain & shutdown
+    U->>Ts: serve | funnel reset (synchronous)
+```
 
 - A `RouteStore` holds the current `slug → service` map, refreshed by a ticker.
 - **De-register debounce:** a service missing from discovery is retained for

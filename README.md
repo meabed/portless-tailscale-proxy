@@ -178,6 +178,26 @@ Step-by-step with screenshots-worth-of-detail: **[docs/EXAMPLES.md](docs/EXAMPLE
 
 ## How it works
 
+```mermaid
+flowchart LR
+    C["Caller<br/>internet or tailnet"]
+    C -->|"https://node.ts.net/web/foo"| TS
+    subgraph machine["your machine"]
+        direction TB
+        TS["tailscale funnel | serve<br/>TLS · :443 / 8443 / 10000"]
+        P["tsp proxy<br/>net/http · :8443"]
+        SCAN["discovery loop<br/>lsof·ps / netstat·tasklist"]
+        D1["127.0.0.1:4983<br/>web · bun"]
+        D2["127.0.0.1:3000<br/>api · node"]
+        TS -->|plain HTTP| P
+        P -->|"/web/foo → strip → /foo<br/>Host → localhost:4983"| D1
+        P --> D2
+        SCAN -->|"slug → port map"| P
+        SCAN -.->|"scan every --interval"| D1
+        SCAN -.-> D2
+    end
+```
+
 1. Every `--interval` seconds, `tsp` lists listening TCP sockets in the range
    (macOS/Linux via `lsof`+`ps`, Windows via `netstat`+`tasklist`), classifies the
    runtime, and derives a slug from the nearest project-root folder
@@ -188,7 +208,23 @@ Step-by-step with screenshots-worth-of-detail: **[docs/EXAMPLES.md](docs/EXAMPLE
 3. `tailscale serve|funnel --bg <proxy-port>` exposes the proxy. On exit the entry
    is reset.
 
-More in [docs/HOW-IT-WORKS.md](docs/HOW-IT-WORKS.md).
+**Request routing:**
+
+```mermaid
+flowchart TD
+    R["Request /seg/rest?query"] --> M{"first segment<br/>matches a slug?"}
+    M -->|yes| H["strip segment · Host → localhost:port<br/>set tsp_route cookie"]
+    M -->|"no (prefix-less asset/HMR)"| CK{"tsp_route<br/>cookie set?"}
+    CK -->|yes| FF["forward full path to the cookie's backend"]
+    CK -->|no| NF["404 + list of services"]
+    H --> UP{"backend up?"}
+    FF --> UP
+    UP -->|yes| OK["stream response<br/>(SSE · WebSocket)"]
+    UP -->|no| E502["502"]
+```
+
+More — including the discovery pipeline and lifecycle sequence diagrams — in
+[docs/HOW-IT-WORKS.md](docs/HOW-IT-WORKS.md).
 
 ---
 

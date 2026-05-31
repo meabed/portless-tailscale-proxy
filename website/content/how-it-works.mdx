@@ -7,25 +7,41 @@ title: How it works
 `tsp` is a path-routing reverse proxy that sits between a single Tailscale entry
 and your many local dev servers.
 
-## Request flow
+## Architecture
 
+```mermaid
+flowchart LR
+    C["Caller<br/>internet or tailnet"]
+    C -->|"https://node.ts.net/web/foo"| TS
+    subgraph machine["your machine"]
+        direction TB
+        TS["tailscale funnel | serve<br/>TLS · :443 / 8443 / 10000"]
+        P["tsp proxy<br/>net/http · :8443"]
+        SCAN["discovery loop<br/>lsof·ps / netstat·tasklist"]
+        D1["127.0.0.1:4983<br/>web · bun"]
+        D2["127.0.0.1:3000<br/>api · node"]
+        TS -->|plain HTTP| P
+        P -->|"/web/foo → strip → /foo<br/>Host → localhost:4983"| D1
+        P --> D2
+        SCAN -->|"slug → port map"| P
+        SCAN -.->|"scan every --interval"| D1
+        SCAN -.-> D2
+    end
 ```
-  caller (internet or tailnet)        your machine
-                                      ┌────────────────────────────────────┐
-  https://node.ts.net                 │ tailscale funnel|serve (TLS, :443)  │
-    /web/foo                          │        │  plain HTTP                 │
-                                      │        ▼                            │
-                                      │ tsp proxy (net/http, :8443)          │
-                                      │   lookup "web" → 4983                │
-                                      │   strip segment → /foo               │
-                                      │   Host → localhost:4983              │
-                                      │        ▼                            │
-                                      │ 127.0.0.1:4983 (your dev server)     │
-                                      └────────────────────────────────────┘
-                                               ▲ port scan every --interval s
-```
+
+One Tailscale entry terminates TLS and forwards plain HTTP to the local `tsp`
+proxy, which routes by the **first path segment** to the matching dev server.
 
 ## Discovery pipeline
+
+```mermaid
+flowchart TD
+    A["List listeners in port range (with PID)<br/>mac/linux: lsof · ps · cwd · windows: netstat · tasklist"] --> B["Classify runtime<br/>node·bun·deno·python·ruby·php·go·java·dotnet·elixir·docker"]
+    B --> C["Derive slug = nearest project-root folder"]
+    C --> D["Resolve duplicates per folder<br/>lowest port = main · others suffixed by port"]
+    D --> E["RouteStore.refresh<br/>debounced de-register"]
+    E --> F["slug → service map"]
+```
 
 Every `--interval` seconds:
 
@@ -44,6 +60,19 @@ Every `--interval` seconds:
 
 ## Routing
 
+```mermaid
+flowchart TD
+    R["Request /seg/rest?query"] --> M{"first segment<br/>matches a slug?"}
+    M -->|yes| H["strip segment · Host → localhost:port<br/>set tsp_route cookie"]
+    M -->|"no (prefix-less asset/HMR)"| CK{"tsp_route<br/>cookie set?"}
+    CK -->|yes| FF["forward full path to the cookie's backend"]
+    CK -->|no| NF["404 + list of services"]
+    H --> UP{"backend up?"}
+    FF --> UP
+    UP -->|yes| OK["stream response<br/>(SSE · WebSocket)"]
+    UP -->|no| E502["502"]
+```
+
 For `/<segment>/<rest…>?<query>`:
 
 - **Hit** → forward to `http://127.0.0.1:<port>/<rest…>` (segment stripped, `Host`
@@ -60,6 +89,23 @@ Apps assume they live at the root, so their HTML references absolute paths
 follow it to the right backend — and the page renders exactly like `localhost`.
 
 ## Lifecycle
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant U as tsp start
+    participant Px as proxy (bind:port)
+    participant Ts as tailscale
+    U->>U: load config · preflight (doctor)
+    U->>Px: listen
+    U->>Ts: funnel | serve --bg <port>
+    loop every --interval
+        U->>U: discover → RouteStore.refresh (debounced)
+    end
+    Note over U,Ts: Ctrl-C / SIGTERM
+    U->>Px: drain & shutdown
+    U->>Ts: serve | funnel reset (synchronous)
+```
 
 - A `RouteStore` is refreshed on a ticker. A service missing from discovery is
   kept for `deregisterCycles` scans before removal (no flapping on restarts).
