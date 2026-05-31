@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -16,102 +17,107 @@ import (
 )
 
 func printHelp() {
-	fmt.Print(`portless-tailscale-proxy (ptp)
-Route a single Tailscale Funnel to all your portless dev servers, by URL path.
+	fmt.Print(`tailscale-proxy (tsp)
+Discover local dev servers by port and expose them through one Tailscale entry,
+routed by project name.
 
-The first path segment of the public URL is the portless hostname; ptp strips it
-and forwards the rest to the matching local dev server:
-
-  https://<node>.ts.net/module-help-ai-agent-api.local/foo
-                        └──────────────┬───────────────┘
-                        ptp → 127.0.0.1:4434/foo
+  https://<node>.ts.net/<project>/foo   →   127.0.0.1:<port>/foo
 
 Usage:
-  ptp <command> [flags]
+  tsp [flags]              # default: run "start" with your saved config
+  tsp <command> [flags]
 
 Commands:
-  start     Preflight, run the proxy, and start the Tailscale Funnel
-  status    Print Funnel status and the current route map
-  list      Print the live hostname→port map and public URLs
-  reset     Stop the Funnel (tailscale funnel reset) and exit
-  doctor    Check tailscale / Funnel / portless and print fix links
+  start      Discover services, run the proxy, and expose it (Serve or Funnel)
+  status     Print Serve/Funnel status and the current service map
+  list       Print discovered services (slug → runtime, port, project, URL)
+  reset      Remove the Serve/Funnel entry and exit
+  doctor     Check tailscale, exposure readiness, and discovery
+  configure  Save defaults to ~/.tailscale-proxy/config.json
+  update     Update tsp to the latest release (or show the brew/npm command)
 
 Examples:
-  ptp doctor                 # verify your environment is ready
-  ptp start                  # expose all portless servers via the Funnel
-  ptp start --no-funnel      # just run the local proxy (print the funnel command)
-  ptp start --bg             # run detached; logs to ./ptp.log
-  ptp list                   # see what's currently routable
-  ptp reset                  # take the Funnel down
+  tsp                        # start using saved config (or built-in defaults)
+  tsp --private              # start privately (Serve) this once
+  tsp configure --ports 3000-9000 --private   # save, then just run "tsp"
+  tsp list                   # see discovered services + URLs
 
-Run "ptp <command> --help" for command-specific flags.
-Global flags: -h/--help, -v/--version
-Docs: https://github.com/meabed/portless-tailscale-proxy
+Run "tsp start --help" for all flags. Global: -h/--help, -v/--version
+Docs: https://github.com/meabed/tailscale-proxy
 `)
 }
 
-// startUsage prints help for the `start` command.
-func startUsage(fs *flag.FlagSet) {
-	fmt.Print(`ptp start — run the path-routing proxy and expose it via Tailscale Funnel
+func startUsage() {
+	fmt.Print(`tsp start — discover services, run the proxy, and expose it
 
 Usage:
-  ptp start [flags]
+  tsp start [flags]     (also the default: plain "tsp" runs this)
 
-Flags:
-  --port <n>          Local proxy HTTP port              (default 8443)
-  --interval <sec>    How often to re-read portless state (default 20)
-  --state <path>      portless routes.json path          (default ~/.portless/routes.json)
-  --funnel-port <n>   Public Funnel port: 443, 8443, or 10000 (default 443)
-  --bg                Run ptp detached in the background (logs → ./ptp.log)
-  --fg                Run in the foreground (default)
-  --no-funnel         Run the proxy only; print the tailscale command to run yourself
-  --log-requests      Log each proxied request (default on; --log-requests=false to disable)
-  --quiet             Disable per-request logging
-  -h, --help          Show this help
+Flags (defaults come from ~/.tailscale-proxy/config.json if present):
+  --ports <lo-hi|port>   Port range or single port to scan   (default 3000-5000)
+  --all                  Include all listeners, not just web runtimes
+  --runtimes <list>      Comma-separated runtimes (default node,bun,deno)
+  --private              Expose privately via Tailscale Serve (default: Funnel)
+  --port <n>             Local proxy HTTP port                (default 8443)
+  --interval <sec>       Re-scan period in seconds            (default 20)
+  --https-port <n>       Public/tailnet HTTPS port            (default 443)
+  --deregister-cycles <n> Missing scans before a gone service is removed (default 5)
+  --bg                   Run tsp detached in the background (logs → ./tsp.log)
+  --proxy-only           Run the proxy only; print the tailscale command
+  --log-requests         Log each proxied request             (default on)
+  --quiet                Disable per-request logging
+  -h, --help             Show this help
 
-Examples:
-  ptp start
-  ptp start --port 9000 --interval 10
-  ptp start --funnel-port 8443
-  ptp start --no-funnel --port 8799
-
-Press Ctrl-C to stop — the Funnel is reset automatically on exit.
+Press Ctrl-C to stop — the Serve/Funnel entry is reset automatically on exit.
 `)
-}
-
-// resolveStatePath returns the flag value or the default ~/.portless/routes.json.
-func resolveStatePath(flagVal string) (string, error) {
-	if flagVal != "" {
-		return flagVal, nil
-	}
-	return defaultStatePath()
 }
 
 type startOpts struct {
-	port       int
-	interval   int
-	state      string
-	funnelPort int
-	bg         bool
-	noFunnel   bool
+	portsRaw         string
+	all              bool
+	runtimesRaw      string
+	private          bool
+	port             int
+	interval         int
+	httpsPort        int
+	deregisterCycles int
+	bg               bool
+	proxyOnly        bool
+	logRequests      bool
+	quiet            bool
+}
+
+// modeOf returns the exposure mode for the private flag.
+func modeOf(private bool) Mode {
+	if private {
+		return ModeServe
+	}
+	return ModeFunnel
 }
 
 func cmdStart(argv []string) int {
+	cfg, cfgPath, existed, cfgErr := loadConfig()
+	if cfgErr != nil {
+		fmt.Fprintf(os.Stderr, "warning: reading %s: %v (using defaults)\n", cfgPath, cfgErr)
+	}
+
 	fs := flag.NewFlagSet("start", flag.ContinueOnError)
-	fs.Usage = func() { startUsage(fs) }
+	fs.Usage = startUsage
 	var o startOpts
-	fs.IntVar(&o.port, "port", 8443, "local proxy HTTP port")
-	fs.IntVar(&o.interval, "interval", 20, "route refresh period (seconds)")
-	fs.StringVar(&o.state, "state", "", "routes.json path")
-	fs.IntVar(&o.funnelPort, "funnel-port", 443, "public funnel port")
+	fs.StringVar(&o.portsRaw, "ports", cfg.Ports, "port range or single port to scan")
+	fs.BoolVar(&o.all, "all", cfg.All, "include all listeners")
+	fs.StringVar(&o.runtimesRaw, "runtimes", cfg.Runtimes, "comma-separated runtimes")
+	fs.BoolVar(&o.private, "private", cfg.Private, "expose via Tailscale Serve (private)")
+	fs.IntVar(&o.port, "port", cfg.Port, "local proxy HTTP port")
+	fs.IntVar(&o.interval, "interval", cfg.Interval, "re-scan period (seconds)")
+	fs.IntVar(&o.httpsPort, "https-port", cfg.HTTPSPort, "public/tailnet HTTPS port")
+	fs.IntVar(&o.deregisterCycles, "deregister-cycles", cfg.DeregisterCycles, "missing scans before removal")
+	fs.BoolVar(&o.logRequests, "log-requests", cfg.LogRequests, "log each proxied request")
+	fs.BoolVar(&o.quiet, "quiet", false, "disable per-request logging")
 	fs.BoolVar(&o.bg, "bg", false, "run detached in background")
 	var fg bool
 	fs.BoolVar(&fg, "fg", false, "run in foreground (default)")
-	fs.BoolVar(&o.noFunnel, "no-funnel", false, "proxy only; print funnel command")
-	logRequests := true
-	fs.BoolVar(&logRequests, "log-requests", true, "log each proxied request (default on)")
-	var quiet bool
-	fs.BoolVar(&quiet, "quiet", false, "disable per-request logging (alias for --log-requests=false)")
+	fs.BoolVar(&o.proxyOnly, "proxy-only", false, "proxy only; print tailscale command")
 	if err := fs.Parse(argv); err != nil {
 		if err == flag.ErrHelp {
 			return 0
@@ -119,92 +125,86 @@ func cmdStart(argv []string) int {
 		return 2
 	}
 
-	if o.funnelPort != 443 && o.funnelPort != 8443 && o.funnelPort != 10000 {
-		fmt.Fprintf(os.Stderr, "invalid --funnel-port %d: Tailscale Funnel allows only 443, 8443, or 10000\n", o.funnelPort)
+	mode := modeOf(o.private)
+	if mode == ModeFunnel && o.httpsPort != 443 && o.httpsPort != 8443 && o.httpsPort != 10000 {
+		fmt.Fprintf(os.Stderr, "invalid --https-port %d: Funnel allows only 443, 8443, or 10000\n", o.httpsPort)
 		return 2
+	}
+	rng, err := parsePortRange(o.portsRaw)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%v\n", err)
+		return 2
+	}
+	if o.quiet {
+		o.logRequests = false
 	}
 
 	if o.bg {
-		logPath := "ptp.log"
-		pid, err := spawnDetached(logPath)
+		pid, err := spawnDetached("tsp.log")
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "failed to detach: %v\n", err)
 			return 1
 		}
-		fmt.Printf("portless-tailscale-proxy running in background (pid %d), logs → %s\n", pid, logPath)
+		fmt.Printf("tailscale-proxy running in background (pid %d), logs → tsp.log\n", pid)
 		return 0
 	}
 
-	statePath, err := resolveStatePath(o.state)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "cannot resolve state path: %v\n", err)
-		return 1
-	}
+	printStartHeader(o, mode, rng, cfgPath, existed)
 
 	runner := execRunner{}
+	dcfg := discoverConfig{rng: rng, all: o.all, runtimes: parseRuntimes(o.runtimesRaw)}
+	disc := newDiscoverer(runner)
 
-	// Preflight (non-fatal in --no-funnel mode).
-	checks := runDoctor(runner, statePath)
-	allOK := printChecks(checks)
-	if !allOK && !o.noFunnel {
-		fmt.Fprintln(os.Stderr, "\npreflight failed — fix the items above, or use --no-funnel to run the proxy alone")
+	if !printChecks(runDoctor(runner, disc, dcfg, mode)) && !o.proxyOnly {
+		fmt.Fprintln(os.Stderr, "\npreflight failed — fix the items above, or use --proxy-only to run the proxy alone")
 		return 1
 	}
 
-	if quiet {
-		logRequests = false
+	// One Discoverer + one store, refreshed on a ticker. The store debounces
+	// de-registration so brief restarts don't flap routes.
+	store := NewRouteStore(func() ([]Service, error) { return disc.Discover(dcfg) }, o.deregisterCycles)
+	if _, _, err := store.refresh(); err != nil {
+		log.Printf("warn: initial discovery failed: %v", err)
 	}
 
-	store := NewRouteStore(statePath)
-	// Populate routes once up front so the URL listing below is accurate.
-	_, _, _ = store.refresh()
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-
 	go poll(ctx, store, time.Duration(o.interval)*time.Second)
 
-	srv := &http.Server{
-		Addr:    fmt.Sprintf("127.0.0.1:%d", o.port),
-		Handler: newHandler(store, logRequests),
-	}
-
-	// Start listening first so the funnel never points at a dead port.
+	srv := &http.Server{Addr: fmt.Sprintf("127.0.0.1:%d", o.port), Handler: newHandler(store, o.logRequests)}
 	ln, err := net.Listen("tcp", srv.Addr)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "cannot listen on %s: %v\n", srv.Addr, err)
 		return 1
 	}
 	log.Printf("listening on http://%s", srv.Addr)
-
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- srv.Serve(ln) }()
 
-	if o.noFunnel {
-		fmt.Printf("proxy only — run this to expose it publicly:\n  tailscale %s\n",
-			strings.Join(funnelArgs(o.port, o.funnelPort), " "))
+	if o.proxyOnly {
+		fmt.Printf("proxy only — run this to expose it:\n  tailscale %s\n",
+			strings.Join(exposeArgs(mode, o.port, o.httpsPort), " "))
 	} else {
-		if err := funnelStart(runner, o.port, o.funnelPort); err != nil {
+		if err := exposeStart(runner, mode, o.port, o.httpsPort); err != nil {
 			fmt.Fprintf(os.Stderr, "%v\n", err)
 			_ = srv.Close()
 			return 1
 		}
-		fmt.Printf("Tailscale Funnel → 127.0.0.1:%d (public port %d)\n", o.port, o.funnelPort)
+		fmt.Printf("%s → 127.0.0.1:%d (port %d)\n", mode.label(), o.port, o.httpsPort)
 	}
 
-	// Show the public Funnel URL for each registered service.
 	if node, nerr := nodeDNSName(runner); nerr == nil {
 		fmt.Println("\nServices:")
-		printFunnelURLs(store.snapshot(), node, o.funnelPort)
+		printServiceURLs(store.snapshot(), node, o.httpsPort)
 		fmt.Println()
 	}
 
-	// Block until a signal arrives or the server stops on its own.
 	select {
 	case err := <-serveErr:
 		if err != nil && err != http.ErrServerClosed {
 			fmt.Fprintf(os.Stderr, "server error: %v\n", err)
-			if !o.noFunnel {
-				_ = funnelReset(runner)
+			if !o.proxyOnly {
+				_ = exposeReset(runner, mode)
 			}
 			return 1
 		}
@@ -212,102 +212,187 @@ func cmdStart(argv []string) int {
 		fmt.Println("\nshutting down…")
 	}
 
-	// Graceful shutdown — run synchronously so the funnel is reset before we exit.
 	shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_ = srv.Shutdown(shutCtx)
-	if !o.noFunnel {
-		if err := funnelReset(runner); err != nil {
+	if !o.proxyOnly {
+		if err := exposeReset(runner, mode); err != nil {
 			log.Printf("warn: %v", err)
 		} else {
-			fmt.Println("Tailscale Funnel reset.")
+			fmt.Printf("%s reset.\n", mode.label())
 		}
 	}
+	return 0
+}
+
+// printStartHeader shows which config is in effect and the resolved parameters.
+func printStartHeader(o startOpts, mode Mode, rng PortRange, cfgPath string, existed bool) {
+	if existed {
+		fmt.Printf("Using config: %s\n", cfgPath)
+	} else {
+		fmt.Printf("No config file (built-in defaults) — save one with `tsp configure`\n")
+	}
+	ports := fmt.Sprintf("%d-%d", rng.Lo, rng.Hi)
+	if rng.Lo == rng.Hi {
+		ports = fmt.Sprintf("%d", rng.Lo)
+	}
+	runtimes := "node,bun,deno (default)"
+	if o.all {
+		runtimes = "all (--all)"
+	} else if strings.TrimSpace(o.runtimesRaw) != "" {
+		runtimes = o.runtimesRaw
+	}
+	kind := "public (Funnel)"
+	if mode == ModeServe {
+		kind = "private (Serve)"
+	}
+	fmt.Printf("  ports=%s  mode=%s  proxy=127.0.0.1:%d  https=%d\n", ports, kind, o.port, o.httpsPort)
+	fmt.Printf("  interval=%ds  runtimes=%s  deregister-after=%d scans  log-requests=%t\n\n",
+		o.interval, runtimes, o.deregisterCycles, o.logRequests)
+}
+
+func cmdConfigure(argv []string) int {
+	cfg, _, _, _ := loadConfig()
+	fs := flag.NewFlagSet("configure", flag.ContinueOnError)
+	fs.StringVar(&cfg.Ports, "ports", cfg.Ports, "port range or single port to scan")
+	fs.BoolVar(&cfg.All, "all", cfg.All, "include all listeners")
+	fs.StringVar(&cfg.Runtimes, "runtimes", cfg.Runtimes, "comma-separated runtimes")
+	fs.BoolVar(&cfg.Private, "private", cfg.Private, "expose privately via Serve")
+	fs.IntVar(&cfg.Port, "port", cfg.Port, "local proxy HTTP port")
+	fs.IntVar(&cfg.Interval, "interval", cfg.Interval, "re-scan period (seconds)")
+	fs.IntVar(&cfg.HTTPSPort, "https-port", cfg.HTTPSPort, "public/tailnet HTTPS port")
+	fs.IntVar(&cfg.DeregisterCycles, "deregister-cycles", cfg.DeregisterCycles, "missing scans before removal")
+	fs.BoolVar(&cfg.LogRequests, "log-requests", cfg.LogRequests, "log each proxied request")
+	if err := fs.Parse(argv); err != nil {
+		if err == flag.ErrHelp {
+			return 0
+		}
+		return 2
+	}
+	// Validate before saving.
+	if _, err := parsePortRange(cfg.Ports); err != nil {
+		fmt.Fprintf(os.Stderr, "%v\n", err)
+		return 2
+	}
+	path, err := saveConfig(cfg)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "could not save config: %v\n", err)
+		return 1
+	}
+	out, _ := json.MarshalIndent(cfg, "", "  ")
+	fmt.Printf("Saved %s:\n%s\n\nRun `tsp` to start with this config.\n", path, out)
 	return 0
 }
 
 func cmdReset(argv []string) int {
-	if err := funnelReset(execRunner{}); err != nil {
+	cfg, _, _, _ := loadConfig()
+	fs := flag.NewFlagSet("reset", flag.ContinueOnError)
+	private := fs.Bool("private", cfg.Private, "reset the Serve entry instead of Funnel")
+	_ = fs.Parse(argv)
+	mode := modeOf(*private)
+	if err := exposeReset(execRunner{}, mode); err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		return 1
 	}
-	fmt.Println("Tailscale Funnel reset.")
+	fmt.Printf("%s reset.\n", mode.label())
 	return 0
 }
 
 func cmdStatus(argv []string) int {
-	out, err := funnelStatus(execRunner{})
+	mode, dcfg, httpsPort := queryConfig(argv)
+	out, err := exposeStatus(execRunner{}, mode)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "funnel status: %v\n", err)
+		fmt.Fprintf(os.Stderr, "status: %v\n", err)
 	} else {
-		fmt.Println("Funnel status:")
-		fmt.Println(out)
+		fmt.Printf("%s status:\n%s\n", mode.label(), out)
 	}
-	return cmdList(argv)
+	return printDiscovered(dcfg, mode, httpsPort)
 }
 
 func cmdList(argv []string) int {
-	fs := flag.NewFlagSet("list", flag.ContinueOnError)
-	state := fs.String("state", "", "routes.json path")
-	funnelPort := fs.Int("funnel-port", 443, "public funnel port for URL display")
-	_ = fs.Parse(argv)
-	statePath, err := resolveStatePath(*state)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "%v\n", err)
-		return 1
-	}
-	m, err := loadRoutes(statePath)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "%v\n", err)
-		return 1
-	}
-	if len(m) == 0 {
-		fmt.Println("No portless routes found. Is `portless` running? Try `ptp doctor`.")
+	mode, dcfg, httpsPort := queryConfig(argv)
+	return printDiscovered(dcfg, mode, httpsPort)
+}
+
+func cmdDoctor(argv []string) int {
+	mode, dcfg, _ := queryConfig(argv)
+	if printChecks(runDoctor(execRunner{}, newDiscoverer(execRunner{}), dcfg, mode)) {
+		fmt.Println("\nAll checks passed — you're ready to `tsp start`.")
 		return 0
 	}
-	fmt.Println("Registered services:")
-	if node, nerr := nodeDNSName(execRunner{}); nerr == nil {
-		printFunnelURLs(m, node, *funnelPort)
-	} else {
-		// Tailscale unavailable — show the local mapping only.
-		for _, h := range sortedKeys(m) {
-			fmt.Printf("  /%s/  →  127.0.0.1:%d\n", h, m[h])
+	return 1
+}
+
+// queryConfig parses the shared discovery/mode flags (seeded from saved config)
+// for list/status/doctor.
+func queryConfig(argv []string) (Mode, discoverConfig, int) {
+	cfg, _, _, _ := loadConfig()
+	fs := flag.NewFlagSet("query", flag.ContinueOnError)
+	portsRaw := fs.String("ports", cfg.Ports, "port range or single port")
+	all := fs.Bool("all", cfg.All, "include all listeners")
+	runtimesRaw := fs.String("runtimes", cfg.Runtimes, "comma-separated runtimes")
+	private := fs.Bool("private", cfg.Private, "private (Serve) mode")
+	httpsPort := fs.Int("https-port", cfg.HTTPSPort, "public/tailnet HTTPS port")
+	_ = fs.Parse(argv)
+	rng, err := parsePortRange(*portsRaw)
+	if err != nil {
+		rng = PortRange{Lo: 3000, Hi: 5000}
+	}
+	return modeOf(*private), discoverConfig{rng: rng, all: *all, runtimes: parseRuntimes(*runtimesRaw)}, *httpsPort
+}
+
+// printDiscovered lists discovered services with their public URLs.
+func printDiscovered(dcfg discoverConfig, mode Mode, httpsPort int) int {
+	svcs, err := newDiscoverer(execRunner{}).Discover(dcfg)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "discovery failed: %v\n", err)
+		return 1
+	}
+	if len(svcs) == 0 {
+		fmt.Printf("No services found in %d-%d. Start a dev server, widen --ports, or use --all.\n", dcfg.rng.Lo, dcfg.rng.Hi)
+		return 0
+	}
+	kind := "public Funnel"
+	if mode == ModeServe {
+		kind = "private Serve"
+	}
+	fmt.Printf("Discovered services (ports %d-%d, %s):\n", dcfg.rng.Lo, dcfg.rng.Hi, kind)
+	node, nerr := nodeDNSName(execRunner{})
+	snap := make(map[string]Service, len(svcs))
+	for _, s := range svcs {
+		snap[s.Slug] = s
+	}
+	for _, slug := range sortedSlugs(snap) {
+		s := snap[slug]
+		rt := s.Runtime
+		if rt == "" {
+			rt = "?"
 		}
-		fmt.Println("\n(run tailscale to see public Funnel URLs — try `ptp doctor`)")
+		dir := s.Dir
+		if dir == "" {
+			dir = "—"
+		}
+		fmt.Printf("  %-22s %-6s :%d   %s\n", slug, rt, s.Port, dir)
+		if nerr == nil {
+			fmt.Printf("    %s/%s/\n", publicBase(node, httpsPort), slug)
+		}
 	}
 	return 0
 }
 
-// printFunnelURLs prints each service's public Funnel URL and local target.
-func printFunnelURLs(routes map[string]int, node string, funnelPort int) {
-	base := publicBase(node, funnelPort)
-	for _, h := range sortedKeys(routes) {
-		fmt.Printf("  %s/%s/  →  127.0.0.1:%d\n", base, h, routes[h])
+// printServiceURLs prints each service's public URL and local target.
+func printServiceURLs(snap map[string]Service, node string, httpsPort int) {
+	base := publicBase(node, httpsPort)
+	for _, slug := range sortedSlugs(snap) {
+		fmt.Printf("  %s/%s/  →  127.0.0.1:%d\n", base, slug, snap[slug].Port)
 	}
 }
 
-// sortedKeys returns the hostnames of a route map in sorted order.
-func sortedKeys(routes map[string]int) []string {
-	hosts := make([]string, 0, len(routes))
-	for h := range routes {
-		hosts = append(hosts, h)
+func sortedSlugs(snap map[string]Service) []string {
+	out := make([]string, 0, len(snap))
+	for s := range snap {
+		out = append(out, s)
 	}
-	sort.Strings(hosts)
-	return hosts
-}
-
-func cmdDoctor(argv []string) int {
-	fs := flag.NewFlagSet("doctor", flag.ContinueOnError)
-	state := fs.String("state", "", "routes.json path")
-	_ = fs.Parse(argv)
-	statePath, err := resolveStatePath(*state)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "%v\n", err)
-		return 1
-	}
-	if printChecks(runDoctor(execRunner{}, statePath)) {
-		fmt.Println("\nAll checks passed — you're ready to `ptp start`.")
-		return 0
-	}
-	return 1
+	sort.Strings(out)
+	return out
 }

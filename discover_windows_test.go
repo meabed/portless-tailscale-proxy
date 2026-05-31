@@ -9,7 +9,7 @@ func TestParseNetstat(t *testing.T) {
 		"  TCP    0.0.0.0:3000     0.0.0.0:0         LISTENING    1234\n" +
 		"  TCP    [::]:4983        [::]:0            LISTENING    1234\n" +
 		"  TCP    0.0.0.0:9000     0.0.0.0:0         LISTENING    5\n" + // out of range
-		"  TCP    0.0.0.0:3000     1.2.3.4:55        ESTABLISHED  77\n"  // not listening
+		"  TCP    0.0.0.0:3000     1.2.3.4:55        ESTABLISHED  77\n" // not listening
 	ls := parseNetstat(out, PortRange{Lo: 3000, Hi: 5000})
 	if len(ls) != 2 {
 		t.Fatalf("got %d: %+v", len(ls), ls)
