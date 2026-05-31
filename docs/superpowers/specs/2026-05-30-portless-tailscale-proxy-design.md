@@ -75,6 +75,22 @@ For an incoming request with path `/<segment>/<rest...>?<query>`:
   WS, opens a client WebSocket to the backend, and relays frames bidirectionally
   (covers Vite/Next HMR and socket APIs).
 
+## Dependencies — zero at runtime
+
+The package ships with **no runtime dependencies**. Everything is built on Bun's
+native primitives — no proxy/router/CLI libraries:
+
+- HTTP server: `Bun.serve`
+- HTTP forwarding: global `fetch`
+- WebSocket proxying: Bun server `websocket` handler + native `WebSocket` client
+- Subprocess (`tailscale`): `Bun.spawn`
+- File read: `Bun.file`
+- Arg parsing, route matching, help text: hand-written (custom), not a dep.
+
+`package.json` has an empty `dependencies` block. Dev-only deps are limited to the
+toolchain: `oxlint`, `oxfmt`, `husky`, `lint-staged`. This keeps install fast and
+the published tarball tiny (`index.ts` + README + LICENSE).
+
 ## Runtime & architecture
 
 - **Runtime:** Bun-native. The HTTP server is `Bun.serve({ fetch, websocket })`.
@@ -137,6 +153,7 @@ Flags (start):
 ## Tooling & packaging
 
 - **Package manager / runtime:** Bun (`bun install`, `bun run`).
+- **Runtime deps:** none (see "Dependencies — zero at runtime").
 - **Lint:** `oxlint` (`bun run lint` / `lint:fix`).
 - **Format:** `oxfmt` (`bun run format` / `format:check`).
 - **Pre-commit:** `husky` + `lint-staged` running `oxfmt` + `oxlint --fix` on staged files.
