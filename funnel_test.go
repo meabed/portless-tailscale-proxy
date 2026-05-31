@@ -49,3 +49,23 @@ func TestFunnelReset(t *testing.T) {
 		t.Fatalf("got %v", r.calls[0])
 	}
 }
+
+func TestNodeDNSName(t *testing.T) {
+	r := &fakeRunner{stdout: `{"Self":{"DNSName":"bigfoot.quoll-adhara.ts.net."}}`}
+	name, err := nodeDNSName(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if name != "bigfoot.quoll-adhara.ts.net" {
+		t.Fatalf("got %q, want trailing dot stripped", name)
+	}
+}
+
+func TestPublicBase(t *testing.T) {
+	if got := publicBase("n.ts.net", 443); got != "https://n.ts.net" {
+		t.Errorf("443: got %q", got)
+	}
+	if got := publicBase("n.ts.net", 8443); got != "https://n.ts.net:8443" {
+		t.Errorf("8443: got %q", got)
+	}
+}

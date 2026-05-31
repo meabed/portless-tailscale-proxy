@@ -2,12 +2,15 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -45,7 +48,7 @@ func TestHandler_routesAndStripsPrefix(t *testing.T) {
 	store := NewRouteStore("")
 	store.routes = map[string]int{"svc.local": port}
 
-	h := newHandler(store)
+	h := newHandler(store, false)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/svc.local/foo?x=1", nil)
 	h.ServeHTTP(rec, req)
@@ -67,7 +70,7 @@ func TestHandler_routesAndStripsPrefix(t *testing.T) {
 func TestHandler_unknownHostReturns404Index(t *testing.T) {
 	store := NewRouteStore("")
 	store.routes = map[string]int{"known.local": 4000}
-	h := newHandler(store)
+	h := newHandler(store, false)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest("GET", "/nope.local/x", nil))
 	if rec.Code != 404 {
@@ -81,7 +84,7 @@ func TestHandler_unknownHostReturns404Index(t *testing.T) {
 func TestHandler_deadBackendReturns502(t *testing.T) {
 	store := NewRouteStore("")
 	store.routes = map[string]int{"dead.local": 1} // nothing listens on :1
-	h := newHandler(store)
+	h := newHandler(store, false)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest("GET", "/dead.local/x", nil))
 	if rec.Code != 502 {
@@ -121,7 +124,7 @@ func TestHandler_proxiesUpgrade(t *testing.T) {
 	store := NewRouteStore("")
 	store.routes = map[string]int{"ws.local": port}
 
-	front := httptest.NewServer(newHandler(store))
+	front := httptest.NewServer(newHandler(store, false))
 	defer front.Close()
 
 	u, _ := url.Parse(front.URL)
@@ -146,6 +149,44 @@ func TestHandler_proxiesUpgrade(t *testing.T) {
 	got, _ := br.ReadString('\n')
 	if !strings.Contains(got, "echo:hello") {
 		t.Fatalf("relay failed, got %q", got)
+	}
+}
+
+func TestHandler_logsRequests(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, "ok")
+	}))
+	defer backend.Close()
+	port := mustPort(t, backend.URL)
+	store := NewRouteStore("")
+	store.routes = map[string]int{"svc.local": port}
+
+	var buf bytes.Buffer
+	log.SetOutput(&buf)
+	defer log.SetOutput(os.Stderr)
+
+	h := newHandler(store, true)
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/svc.local/x", nil))
+
+	out := buf.String()
+	for _, want := range []string{"GET", "200", "127.0.0.1:" + strconv.Itoa(port)} {
+		if !strings.Contains(out, want) {
+			t.Errorf("log line missing %q; got: %q", want, out)
+		}
+	}
+}
+
+func TestHandler_loggingDisabledIsSilent(t *testing.T) {
+	store := NewRouteStore("")
+	store.routes = map[string]int{"svc.local": 4000}
+	var buf bytes.Buffer
+	log.SetOutput(&buf)
+	defer log.SetOutput(os.Stderr)
+
+	h := newHandler(store, false)
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/unknown.local/x", nil))
+	if buf.Len() != 0 {
+		t.Errorf("expected no log output, got: %q", buf.String())
 	}
 }
 

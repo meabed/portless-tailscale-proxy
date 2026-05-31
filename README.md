@@ -79,6 +79,22 @@ Run `ptp <command> --help` for command-specific flags. Global: `-h/--help`, `-v/
 | `--bg` | off | Run `ptp` detached in the background (logs → `./ptp.log`) |
 | `--fg` | on | Run in the foreground |
 | `--no-funnel` | off | Run the proxy only; print the `tailscale` command to run yourself |
+| `--log-requests` | on | Log each proxied request (status, method, path, target, duration). `--log-requests=false` to disable |
+| `--quiet` | off | Disable per-request logging |
+
+On startup (and via `ptp list`/`ptp status`) the **public Funnel URL of every
+service** is printed, so you can copy-paste straight into a browser:
+
+```
+Services:
+  https://bigfoot.quoll-adhara.ts.net/module-help-ai-agent-api.local/  →  127.0.0.1:4434
+  https://bigfoot.quoll-adhara.ts.net/www-web-help-ai.local/           →  127.0.0.1:4764
+
+2026/05/31 01:05:11 200 GET    /module-help-ai-agent-api.local/ → 127.0.0.1:4434 (3ms)
+2026/05/31 01:05:11 404 GET    /nope.local/x → — (0s)
+```
+
+Request logs are colorized by status when writing to a terminal (set `NO_COLOR` to disable).
 
 Examples:
 

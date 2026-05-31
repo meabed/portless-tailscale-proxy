@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -64,6 +65,8 @@ Flags:
   --bg                Run ptp detached in the background (logs → ./ptp.log)
   --fg                Run in the foreground (default)
   --no-funnel         Run the proxy only; print the tailscale command to run yourself
+  --log-requests      Log each proxied request (default on; --log-requests=false to disable)
+  --quiet             Disable per-request logging
   -h, --help          Show this help
 
 Examples:
@@ -105,6 +108,10 @@ func cmdStart(argv []string) int {
 	var fg bool
 	fs.BoolVar(&fg, "fg", false, "run in foreground (default)")
 	fs.BoolVar(&o.noFunnel, "no-funnel", false, "proxy only; print funnel command")
+	logRequests := true
+	fs.BoolVar(&logRequests, "log-requests", true, "log each proxied request (default on)")
+	var quiet bool
+	fs.BoolVar(&quiet, "quiet", false, "disable per-request logging (alias for --log-requests=false)")
 	if err := fs.Parse(argv); err != nil {
 		if err == flag.ErrHelp {
 			return 0
@@ -144,7 +151,13 @@ func cmdStart(argv []string) int {
 		return 1
 	}
 
+	if quiet {
+		logRequests = false
+	}
+
 	store := NewRouteStore(statePath)
+	// Populate routes once up front so the URL listing below is accurate.
+	_, _, _ = store.refresh()
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
@@ -152,7 +165,7 @@ func cmdStart(argv []string) int {
 
 	srv := &http.Server{
 		Addr:    fmt.Sprintf("127.0.0.1:%d", o.port),
-		Handler: newHandler(store),
+		Handler: newHandler(store, logRequests),
 	}
 
 	// Start listening first so the funnel never points at a dead port.
@@ -176,6 +189,13 @@ func cmdStart(argv []string) int {
 			return 1
 		}
 		fmt.Printf("Tailscale Funnel → 127.0.0.1:%d (public port %d)\n", o.port, o.funnelPort)
+	}
+
+	// Show the public Funnel URL for each registered service.
+	if node, nerr := nodeDNSName(runner); nerr == nil {
+		fmt.Println("\nServices:")
+		printFunnelURLs(store.snapshot(), node, o.funnelPort)
+		fmt.Println()
 	}
 
 	// Block until a signal arrives or the server stops on its own.
@@ -229,6 +249,7 @@ func cmdStatus(argv []string) int {
 func cmdList(argv []string) int {
 	fs := flag.NewFlagSet("list", flag.ContinueOnError)
 	state := fs.String("state", "", "routes.json path")
+	funnelPort := fs.Int("funnel-port", 443, "public funnel port for URL display")
 	_ = fs.Parse(argv)
 	statePath, err := resolveStatePath(*state)
 	if err != nil {
@@ -245,10 +266,34 @@ func cmdList(argv []string) int {
 		return 0
 	}
 	fmt.Println("Registered services:")
-	for h, p := range m {
-		fmt.Printf("  /%s/  ->  127.0.0.1:%d\n", h, p)
+	if node, nerr := nodeDNSName(execRunner{}); nerr == nil {
+		printFunnelURLs(m, node, *funnelPort)
+	} else {
+		// Tailscale unavailable — show the local mapping only.
+		for _, h := range sortedKeys(m) {
+			fmt.Printf("  /%s/  →  127.0.0.1:%d\n", h, m[h])
+		}
+		fmt.Println("\n(run tailscale to see public Funnel URLs — try `ptp doctor`)")
 	}
 	return 0
+}
+
+// printFunnelURLs prints each service's public Funnel URL and local target.
+func printFunnelURLs(routes map[string]int, node string, funnelPort int) {
+	base := publicBase(node, funnelPort)
+	for _, h := range sortedKeys(routes) {
+		fmt.Printf("  %s/%s/  →  127.0.0.1:%d\n", base, h, routes[h])
+	}
+}
+
+// sortedKeys returns the hostnames of a route map in sorted order.
+func sortedKeys(routes map[string]int) []string {
+	hosts := make([]string, 0, len(routes))
+	for h := range routes {
+		hosts = append(hosts, h)
+	}
+	sort.Strings(hosts)
+	return hosts
 }
 
 func cmdDoctor(argv []string) int {

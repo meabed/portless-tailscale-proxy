@@ -2,9 +2,11 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os/exec"
 	"strconv"
+	"strings"
 )
 
 // Runner runs external commands. Abstracted so tests can fake `tailscale`.
@@ -57,4 +59,34 @@ func funnelStatus(r Runner) (string, error) {
 		return "", fmt.Errorf("%v\n%s", err, stderr)
 	}
 	return out, nil
+}
+
+// nodeDNSName returns this node's MagicDNS name (without the trailing dot),
+// e.g. "bigfoot.quoll-adhara.ts.net".
+func nodeDNSName(r Runner) (string, error) {
+	out, stderr, err := r.Run("tailscale", "status", "--json")
+	if err != nil {
+		return "", fmt.Errorf("tailscale status failed: %v\n%s", err, stderr)
+	}
+	var s struct {
+		Self struct {
+			DNSName string `json:"DNSName"`
+		} `json:"Self"`
+	}
+	if err := json.Unmarshal([]byte(out), &s); err != nil {
+		return "", err
+	}
+	name := strings.TrimSuffix(s.Self.DNSName, ".")
+	if name == "" {
+		return "", fmt.Errorf("this node has no MagicDNS name")
+	}
+	return name, nil
+}
+
+// publicBase returns the Funnel base URL, e.g. https://node.ts.net[:port].
+func publicBase(node string, funnelPort int) string {
+	if funnelPort == 443 {
+		return "https://" + node
+	}
+	return fmt.Sprintf("https://%s:%d", node, funnelPort)
 }

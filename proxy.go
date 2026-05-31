@@ -1,13 +1,19 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"fmt"
+	"log"
+	"net"
 	"net/http"
 	"net/http/httputil"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 )
 
 // splitFirstSegment splits "/seg/rest..." into ("seg", "/rest...").
@@ -54,7 +60,9 @@ type target struct {
 }
 
 // newHandler returns an HTTP handler that routes by first path segment.
-func newHandler(store *RouteStore) http.Handler {
+// When logRequests is true, each request is logged with method, status,
+// target, and duration.
+func newHandler(store *RouteStore, logRequests bool) http.Handler {
 	proxy := &httputil.ReverseProxy{
 		FlushInterval: -1, // flush immediately: SSE / streaming / chunked
 		Rewrite: func(pr *httputil.ProxyRequest) {
@@ -78,18 +86,98 @@ func newHandler(store *RouteStore) http.Handler {
 	}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+
 		seg, rest := splitFirstSegment(r.URL.Path)
-		if seg == "" {
-			writeIndex(w, store, http.StatusNotFound)
-			return
+		port, ok := 0, false
+		if seg != "" {
+			port, ok = store.lookup(seg)
 		}
-		port, ok := store.lookup(seg)
-		if !ok {
-			writeIndex(w, store, http.StatusNotFound)
-			return
+		if ok {
+			tgt := target{host: "127.0.0.1:" + strconv.Itoa(port), path: rest}
+			ctx := context.WithValue(r.Context(), targetKey, tgt)
+			proxy.ServeHTTP(rec, r.WithContext(ctx))
+		} else {
+			writeIndex(rec, store, http.StatusNotFound)
 		}
-		tgt := target{host: "127.0.0.1:" + strconv.Itoa(port), path: rest}
-		ctx := context.WithValue(r.Context(), targetKey, tgt)
-		proxy.ServeHTTP(w, r.WithContext(ctx))
+
+		if logRequests {
+			logRequest(r, rec.status, port, time.Since(start))
+		}
 	})
+}
+
+// statusRecorder captures the response status code while preserving streaming
+// (Flush) and WebSocket (Hijack) support.
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (s *statusRecorder) WriteHeader(code int) {
+	s.status = code
+	s.ResponseWriter.WriteHeader(code)
+}
+
+func (s *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	hj, ok := s.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, fmt.Errorf("response writer does not support hijacking")
+	}
+	return hj.Hijack()
+}
+
+func (s *statusRecorder) Flush() {
+	if f, ok := s.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+// logRequest prints one nicely formatted request line.
+func logRequest(r *http.Request, status, port int, dur time.Duration) {
+	target := "—"
+	if port > 0 {
+		target = "127.0.0.1:" + strconv.Itoa(port)
+	}
+	log.Printf("%s %-6s %s → %s (%s)",
+		colorStatus(status), r.Method, r.URL.Path, target, dur.Round(time.Millisecond))
+}
+
+// colorStatus renders an HTTP status code, colorized when writing to a terminal.
+func colorStatus(code int) string {
+	s := strconv.Itoa(code)
+	if !useColor() {
+		return s
+	}
+	var c string
+	switch {
+	case code >= 500:
+		c = "\x1b[31m" // red
+	case code >= 400:
+		c = "\x1b[33m" // yellow
+	case code >= 300:
+		c = "\x1b[36m" // cyan
+	default:
+		c = "\x1b[32m" // green
+	}
+	return c + s + "\x1b[0m"
+}
+
+var (
+	colorOnce    sync.Once
+	colorEnabled bool
+)
+
+// useColor reports whether ANSI colors should be emitted (stderr is a TTY and
+// NO_COLOR is unset). log output goes to stderr, so we probe stderr.
+func useColor() bool {
+	colorOnce.Do(func() {
+		if os.Getenv("NO_COLOR") != "" {
+			return
+		}
+		fi, err := os.Stderr.Stat()
+		colorEnabled = err == nil && fi.Mode()&os.ModeCharDevice != 0
+	})
+	return colorEnabled
 }
