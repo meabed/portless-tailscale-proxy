@@ -136,7 +136,7 @@ use). Flags override config at runtime; the file is the source of defaults.
 {
   "ports": "3000-5000", "all": false, "runtimes": "", "private": false,
   "port": 8443, "interval": 20, "httpsPort": 443,
-  "logRequests": true, "deregisterCycles": 5
+  "logRequests": true, "deregisterCycles": 5, "forwardHost": false
 }
 ```
 

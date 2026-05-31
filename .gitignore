@@ -1,10 +1,13 @@
-/dist/
-/dist-tarball/
+# build artifacts
 /tsp
 /tsp.exe
+/tailscale-proxy
+/dist/
+/dist-tarball/
+/npm/dist/
 *.log
+
+# deps, editor, local state
 node_modules/
-npm/dist/
 .idea
 .remember
-/tailscale-proxy
