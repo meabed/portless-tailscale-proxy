@@ -15,27 +15,64 @@ import (
 )
 
 func printHelp() {
-	fmt.Print(`portless-tailscale-proxy (ptp) — route a Tailscale Funnel to portless dev servers
+	fmt.Print(`portless-tailscale-proxy (ptp)
+Route a single Tailscale Funnel to all your portless dev servers, by URL path.
+
+The first path segment of the public URL is the portless hostname; ptp strips it
+and forwards the rest to the matching local dev server:
+
+  https://<node>.ts.net/module-help-ai-agent-api.local/foo
+                        └──────────────┬───────────────┘
+                        ptp → 127.0.0.1:4434/foo
 
 Usage:
   ptp <command> [flags]
 
 Commands:
-  start            Preflight, run the proxy, and start the Tailscale Funnel
-  reset            Stop the Funnel (tailscale funnel reset) and exit
-  status           Print Funnel status and the current route map
-  list             Print the live hostname→port map and public URLs
-  doctor           Check tailscale / Funnel / portless and print fix links
+  start     Preflight, run the proxy, and start the Tailscale Funnel
+  status    Print Funnel status and the current route map
+  list      Print the live hostname→port map and public URLs
+  reset     Stop the Funnel (tailscale funnel reset) and exit
+  doctor    Check tailscale / Funnel / portless and print fix links
 
-Common flags (start):
-  --port <n>          Local proxy HTTP port             (default 8443)
-  --interval <sec>    Route refresh period in seconds   (default 20)
-  --state <path>      routes.json path                  (default ~/.portless/routes.json)
-  --funnel-port <n>   Public funnel port 443|8443|10000 (default 443)
-  --bg                Run ptp detached in the background
-  --no-funnel         Proxy only; print the tailscale command to run manually
-  -h, --help          Show help
-  -v, --version       Show version
+Examples:
+  ptp doctor                 # verify your environment is ready
+  ptp start                  # expose all portless servers via the Funnel
+  ptp start --no-funnel      # just run the local proxy (print the funnel command)
+  ptp start --bg             # run detached; logs to ./ptp.log
+  ptp list                   # see what's currently routable
+  ptp reset                  # take the Funnel down
+
+Run "ptp <command> --help" for command-specific flags.
+Global flags: -h/--help, -v/--version
+Docs: https://github.com/meabed/portless-tailscale-proxy
+`)
+}
+
+// startUsage prints help for the `start` command.
+func startUsage(fs *flag.FlagSet) {
+	fmt.Print(`ptp start — run the path-routing proxy and expose it via Tailscale Funnel
+
+Usage:
+  ptp start [flags]
+
+Flags:
+  --port <n>          Local proxy HTTP port              (default 8443)
+  --interval <sec>    How often to re-read portless state (default 20)
+  --state <path>      portless routes.json path          (default ~/.portless/routes.json)
+  --funnel-port <n>   Public Funnel port: 443, 8443, or 10000 (default 443)
+  --bg                Run ptp detached in the background (logs → ./ptp.log)
+  --fg                Run in the foreground (default)
+  --no-funnel         Run the proxy only; print the tailscale command to run yourself
+  -h, --help          Show this help
+
+Examples:
+  ptp start
+  ptp start --port 9000 --interval 10
+  ptp start --funnel-port 8443
+  ptp start --no-funnel --port 8799
+
+Press Ctrl-C to stop — the Funnel is reset automatically on exit.
 `)
 }
 
@@ -58,6 +95,7 @@ type startOpts struct {
 
 func cmdStart(argv []string) int {
 	fs := flag.NewFlagSet("start", flag.ContinueOnError)
+	fs.Usage = func() { startUsage(fs) }
 	var o startOpts
 	fs.IntVar(&o.port, "port", 8443, "local proxy HTTP port")
 	fs.IntVar(&o.interval, "interval", 20, "route refresh period (seconds)")
@@ -68,6 +106,14 @@ func cmdStart(argv []string) int {
 	fs.BoolVar(&fg, "fg", false, "run in foreground (default)")
 	fs.BoolVar(&o.noFunnel, "no-funnel", false, "proxy only; print funnel command")
 	if err := fs.Parse(argv); err != nil {
+		if err == flag.ErrHelp {
+			return 0
+		}
+		return 2
+	}
+
+	if o.funnelPort != 443 && o.funnelPort != 8443 && o.funnelPort != 10000 {
+		fmt.Fprintf(os.Stderr, "invalid --funnel-port %d: Tailscale Funnel allows only 443, 8443, or 10000\n", o.funnelPort)
 		return 2
 	}
 
