@@ -57,13 +57,30 @@ listening, names each by its project folder, and proxies to it.
 For `/<segment>/<rest...>?<query>`:
 
 - **Hit** → forward to `http://127.0.0.1:<port>/<rest...>?<query>` (segment stripped,
-  `Host` rewritten, `X-Forwarded-*` set). Streaming flushes immediately
+  `Host` rewritten — see header handling below). Streaming flushes immediately
   (`FlushInterval = -1`); WebSocket upgrades are relayed by the stdlib.
 - **Miss / empty** → `404` with the list of registered services.
 - **Dead backend** → `502`.
 
 The proxy uses a single bounded `http.Transport` (capped idle pool + 60s idle
 timeout) so connections to dev servers that come and go don't accumulate.
+
+### Host / forwarded headers
+
+This is a standard HTTP reverse proxy, so it uses the `X-Forwarded-*` headers
+(like nginx/Caddy/Traefik) — **not** PROXY protocol, which dev servers don't
+expect and which would corrupt them.
+
+- The upstream `Host` is **always** the local target (`127.0.0.1:<port>`), so
+  Host-validating dev servers accept the request.
+- `X-Forwarded-For` (the real client IP) is always forwarded.
+- **Default (local):** `X-Forwarded-Host`/`-Proto` are set to the local target
+  (`http`). The app never sees the external host, so it builds URLs and redirects
+  exactly as it would on `localhost` — no surprises.
+- **`--forward-host` (proxy):** `X-Forwarded-Host` = the public funnel/serve host
+  and `X-Forwarded-Proto: https`, so apps that need the public URL (OAuth
+  callbacks, canonical links, sitemaps) get it. Enable per-run or in config
+  (`"forwardHost": true`).
 
 ### Cookie route-affinity (so apps render correctly)
 

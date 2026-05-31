@@ -18,13 +18,15 @@ type Config struct {
 	HTTPSPort        int    `json:"httpsPort"`        // public/tailnet HTTPS port
 	LogRequests      bool   `json:"logRequests"`      // per-request logging
 	DeregisterCycles int    `json:"deregisterCycles"` // missing scans before removal
+	ForwardHost      bool   `json:"forwardHost"`      // forward the external host to the app
 }
 
 // defaultConfig returns the built-in defaults.
 func defaultConfig() Config {
 	return Config{
 		Ports: "3000-5000", All: false, Runtimes: "", Private: false,
-		Port: 8443, Interval: 20, HTTPSPort: 443, LogRequests: true, DeregisterCycles: 5,
+		Port: 8443, Interval: 20, HTTPSPort: 443, LogRequests: true,
+		DeregisterCycles: 5, ForwardHost: false,
 	}
 }
 

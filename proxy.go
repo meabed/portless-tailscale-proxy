@@ -66,8 +66,10 @@ type target struct {
 
 // newHandler returns an HTTP handler that routes by first path segment.
 // When logRequests is true, each request is logged with method, status,
-// target, and duration.
-func newHandler(store *RouteStore, logRequests bool) http.Handler {
+// target, and duration. When forwardHost is true, the external (funnel/serve)
+// host is forwarded to the app via X-Forwarded-Host + X-Forwarded-Proto=https;
+// otherwise the app only ever sees the local host (so it behaves like localhost).
+func newHandler(store *RouteStore, logRequests, forwardHost bool) http.Handler {
 	// A dedicated, bounded transport so idle connections to dev servers that come
 	// and go don't accumulate (capped pool + short idle timeout = steady memory).
 	transport := &http.Transport{
@@ -89,11 +91,21 @@ func newHandler(store *RouteStore, logRequests bool) http.Handler {
 			pr.Out.URL.Host = tgt.host
 			pr.Out.URL.Path = tgt.path
 			pr.Out.URL.RawQuery = pr.In.URL.RawQuery
+			// Host is always the local target so the dev server sees a localhost
+			// request (and Host-validating servers accept it).
 			pr.Out.Host = tgt.host
+			// Keeps X-Forwarded-For (real client IP); also sets X-Forwarded-Host to
+			// the inbound (external) host, which we override below.
 			pr.SetXForwarded()
-			pr.Out.Header.Set("X-Forwarded-Proto", "https")
-			if pr.In.Host != "" {
+			if forwardHost {
+				// Let the app know the public URL it's served at.
 				pr.Out.Header.Set("X-Forwarded-Host", pr.In.Host)
+				pr.Out.Header.Set("X-Forwarded-Proto", "https")
+			} else {
+				// Present a purely local request — never leak the external host, so
+				// the app builds URLs/redirects exactly as it would on localhost.
+				pr.Out.Header.Set("X-Forwarded-Host", tgt.host)
+				pr.Out.Header.Set("X-Forwarded-Proto", "http")
 			}
 		},
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {

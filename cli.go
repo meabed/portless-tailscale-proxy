@@ -64,6 +64,8 @@ Flags (defaults come from ~/.tailscale-proxy/config.json if present):
   --deregister-cycles <n> Missing scans before a gone service is removed (default 5)
   --bg                   Run tsp detached in the background (logs → ./tsp.log)
   --proxy-only           Run the proxy only; print the tailscale command
+  --forward-host         Forward the public host to apps (X-Forwarded-Host/Proto);
+                         default presents a local request (apps behave like localhost)
   --log-requests         Log each proxied request             (default on)
   --quiet                Disable per-request logging
   -h, --help             Show this help
@@ -84,6 +86,7 @@ type startOpts struct {
 	bg               bool
 	proxyOnly        bool
 	logRequests      bool
+	forwardHost      bool
 	quiet            bool
 }
 
@@ -113,6 +116,7 @@ func cmdStart(argv []string) int {
 	fs.IntVar(&o.httpsPort, "https-port", cfg.HTTPSPort, "public/tailnet HTTPS port")
 	fs.IntVar(&o.deregisterCycles, "deregister-cycles", cfg.DeregisterCycles, "missing scans before removal")
 	fs.BoolVar(&o.logRequests, "log-requests", cfg.LogRequests, "log each proxied request")
+	fs.BoolVar(&o.forwardHost, "forward-host", cfg.ForwardHost, "forward the public host to apps (X-Forwarded-Host/Proto); default presents a local request")
 	fs.BoolVar(&o.quiet, "quiet", false, "disable per-request logging")
 	fs.BoolVar(&o.bg, "bg", false, "run detached in background")
 	var fg bool
@@ -171,7 +175,7 @@ func cmdStart(argv []string) int {
 	defer stop()
 	go poll(ctx, store, time.Duration(o.interval)*time.Second)
 
-	srv := &http.Server{Addr: fmt.Sprintf("127.0.0.1:%d", o.port), Handler: newHandler(store, o.logRequests)}
+	srv := &http.Server{Addr: fmt.Sprintf("127.0.0.1:%d", o.port), Handler: newHandler(store, o.logRequests, o.forwardHost)}
 	ln, err := net.Listen("tcp", srv.Addr)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "cannot listen on %s: %v\n", srv.Addr, err)
@@ -247,9 +251,13 @@ func printStartHeader(o startOpts, mode Mode, rng PortRange, cfgPath string, exi
 	if mode == ModeServe {
 		kind = "private (Serve)"
 	}
+	hostMode := "local (apps see localhost)"
+	if o.forwardHost {
+		hostMode = "forwarded (public host via X-Forwarded-*)"
+	}
 	fmt.Printf("  ports=%s  mode=%s  proxy=127.0.0.1:%d  https=%d\n", ports, kind, o.port, o.httpsPort)
-	fmt.Printf("  interval=%ds  runtimes=%s  deregister-after=%d scans  log-requests=%t\n\n",
-		o.interval, runtimes, o.deregisterCycles, o.logRequests)
+	fmt.Printf("  interval=%ds  runtimes=%s  deregister-after=%d scans  log-requests=%t\n", o.interval, runtimes, o.deregisterCycles, o.logRequests)
+	fmt.Printf("  host=%s\n\n", hostMode)
 }
 
 func cmdConfigure(argv []string) int {
@@ -264,6 +272,7 @@ func cmdConfigure(argv []string) int {
 	fs.IntVar(&cfg.HTTPSPort, "https-port", cfg.HTTPSPort, "public/tailnet HTTPS port")
 	fs.IntVar(&cfg.DeregisterCycles, "deregister-cycles", cfg.DeregisterCycles, "missing scans before removal")
 	fs.BoolVar(&cfg.LogRequests, "log-requests", cfg.LogRequests, "log each proxied request")
+	fs.BoolVar(&cfg.ForwardHost, "forward-host", cfg.ForwardHost, "forward the public host to apps")
 	if err := fs.Parse(argv); err != nil {
 		if err == flag.ErrHelp {
 			return 0

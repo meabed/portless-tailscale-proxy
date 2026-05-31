@@ -86,6 +86,7 @@ Run `tsp start --help` for all flags. Global: `-h/--help`, `-v/--version`.
 | `--interval <sec>` | `20` | Re-scan period |
 | `--https-port <n>` | `443` | Public/tailnet HTTPS port (Funnel: `443`/`8443`/`10000`) |
 | `--deregister-cycles <n>` | `5` | Missing scans before a gone service is removed |
+| `--forward-host` | off | Forward the public host to apps via `X-Forwarded-Host/Proto`. Default presents a **local** request so apps behave exactly like `localhost` |
 | `--bg` | off | Run detached (logs → `./tsp.log`) |
 | `--proxy-only` | off | Run the proxy only; print the `tailscale` command |
 | `--log-requests` | on | Log each proxied request |

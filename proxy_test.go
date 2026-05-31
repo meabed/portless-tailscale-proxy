@@ -54,7 +54,7 @@ func TestHandler_routesAndStripsPrefix(t *testing.T) {
 	port := mustPort(t, backend.URL)
 	store := storeWith(Service{Slug: "svc.local", Port: port, Runtime: "node"})
 
-	h := newHandler(store, false)
+	h := newHandler(store, false, false)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/svc.local/foo?x=1", nil)
 	h.ServeHTTP(rec, req)
@@ -75,7 +75,7 @@ func TestHandler_routesAndStripsPrefix(t *testing.T) {
 
 func TestHandler_unknownHostReturns404Index(t *testing.T) {
 	store := storeWith(Service{Slug: "known.local", Port: 4000, Runtime: "node"})
-	h := newHandler(store, false)
+	h := newHandler(store, false, false)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest("GET", "/nope.local/x", nil))
 	if rec.Code != 404 {
@@ -88,7 +88,7 @@ func TestHandler_unknownHostReturns404Index(t *testing.T) {
 
 func TestHandler_deadBackendReturns502(t *testing.T) {
 	store := storeWith(Service{Slug: "dead.local", Port: 1, Runtime: "node"}) // nothing listens on :1
-	h := newHandler(store, false)
+	h := newHandler(store, false, false)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest("GET", "/dead.local/x", nil))
 	if rec.Code != 502 {
@@ -127,7 +127,7 @@ func TestHandler_proxiesUpgrade(t *testing.T) {
 	port := mustPort(t, backend.URL)
 	store := storeWith(Service{Slug: "ws.local", Port: port, Runtime: "node"})
 
-	front := httptest.NewServer(newHandler(store, false))
+	front := httptest.NewServer(newHandler(store, false, false))
 	defer front.Close()
 
 	u, _ := url.Parse(front.URL)
@@ -166,7 +166,7 @@ func TestHandler_cookieAffinity(t *testing.T) {
 	defer backend.Close()
 	port := mustPort(t, backend.URL)
 	store := storeWith(Service{Slug: "web", Port: port, Runtime: "node"})
-	h := newHandler(store, false)
+	h := newHandler(store, false, false)
 
 	// 1. Visit the prefixed app URL → routed (stripped) AND sets the affinity cookie.
 	rec := httptest.NewRecorder()
@@ -204,6 +204,57 @@ func TestHandler_cookieAffinity(t *testing.T) {
 	}
 }
 
+// TestHandler_forwardHostModes verifies the local-default vs --forward-host
+// header behavior the app receives.
+func TestHandler_forwardHostModes(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Echo-Host", r.Host)
+		w.Header().Set("X-Echo-XFH", r.Header.Get("X-Forwarded-Host"))
+		w.Header().Set("X-Echo-XFP", r.Header.Get("X-Forwarded-Proto"))
+		w.Header().Set("X-Echo-XFF", r.Header.Get("X-Forwarded-For"))
+		io.WriteString(w, "ok")
+	}))
+	defer backend.Close()
+	port := mustPort(t, backend.URL)
+	local := "127.0.0.1:" + strconv.Itoa(port)
+	store := storeWith(Service{Slug: "app", Port: port, Runtime: "node"})
+
+	call := func(forwardHost bool) http.Header {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest("GET", "/app/page", nil)
+		req.Host = "bigfoot.quoll-adhara.ts.net" // external funnel host
+		newHandler(store, false, forwardHost).ServeHTTP(rec, req)
+		return rec.Result().Header
+	}
+
+	// Default (local): Host is local, no external host leaks, proto http.
+	h := call(false)
+	if h.Get("X-Echo-Host") != local {
+		t.Errorf("default: backend Host = %q, want %q", h.Get("X-Echo-Host"), local)
+	}
+	if h.Get("X-Echo-XFH") == "bigfoot.quoll-adhara.ts.net" {
+		t.Errorf("default: external host leaked via X-Forwarded-Host (%q)", h.Get("X-Echo-XFH"))
+	}
+	if h.Get("X-Echo-XFP") != "http" {
+		t.Errorf("default: X-Forwarded-Proto = %q, want http", h.Get("X-Echo-XFP"))
+	}
+	if h.Get("X-Echo-XFF") == "" {
+		t.Error("default: X-Forwarded-For (client IP) should still be set")
+	}
+
+	// Forward mode: external host + https are surfaced to the app.
+	h = call(true)
+	if h.Get("X-Echo-Host") != local {
+		t.Errorf("forward: backend Host = %q, want local %q", h.Get("X-Echo-Host"), local)
+	}
+	if h.Get("X-Echo-XFH") != "bigfoot.quoll-adhara.ts.net" {
+		t.Errorf("forward: X-Forwarded-Host = %q, want the public host", h.Get("X-Echo-XFH"))
+	}
+	if h.Get("X-Echo-XFP") != "https" {
+		t.Errorf("forward: X-Forwarded-Proto = %q, want https", h.Get("X-Echo-XFP"))
+	}
+}
+
 func TestHandler_logsRequests(t *testing.T) {
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, "ok")
@@ -216,7 +267,7 @@ func TestHandler_logsRequests(t *testing.T) {
 	log.SetOutput(&buf)
 	defer log.SetOutput(os.Stderr)
 
-	h := newHandler(store, true)
+	h := newHandler(store, true, false)
 	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/svc.local/x", nil))
 
 	out := buf.String()
@@ -233,7 +284,7 @@ func TestHandler_loggingDisabledIsSilent(t *testing.T) {
 	log.SetOutput(&buf)
 	defer log.SetOutput(os.Stderr)
 
-	h := newHandler(store, false)
+	h := newHandler(store, false, false)
 	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/unknown.local/x", nil))
 	if buf.Len() != 0 {
 		t.Errorf("expected no log output, got: %q", buf.String())
