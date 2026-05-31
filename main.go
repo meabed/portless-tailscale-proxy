@@ -19,6 +19,16 @@ func run(argv []string) int {
 		return 1
 	}
 	switch argv[0] {
+	case "start":
+		return cmdStart(argv[1:])
+	case "reset":
+		return cmdReset(argv[1:])
+	case "status":
+		return cmdStatus(argv[1:])
+	case "list":
+		return cmdList(argv[1:])
+	case "doctor":
+		return cmdDoctor(argv[1:])
 	case "-v", "--version", "version":
 		fmt.Println(version)
 		return 0
@@ -30,9 +40,4 @@ func run(argv []string) int {
 		printHelp()
 		return 1
 	}
-}
-
-// printHelp is a temporary stub; the full version lives in cli.go (Task 10).
-func printHelp() {
-	fmt.Println("portless-tailscale-proxy (ptp) — see `ptp doctor`")
 }
