@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -108,33 +109,53 @@ func cmdStart(argv []string) int {
 		Handler: newHandler(store),
 	}
 
+	// Start listening first so the funnel never points at a dead port.
+	ln, err := net.Listen("tcp", srv.Addr)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "cannot listen on %s: %v\n", srv.Addr, err)
+		return 1
+	}
+	log.Printf("listening on http://%s", srv.Addr)
+
+	serveErr := make(chan error, 1)
+	go func() { serveErr <- srv.Serve(ln) }()
+
 	if o.noFunnel {
 		fmt.Printf("proxy only — run this to expose it publicly:\n  tailscale %s\n",
 			strings.Join(funnelArgs(o.port, o.funnelPort), " "))
 	} else {
 		if err := funnelStart(runner, o.port, o.funnelPort); err != nil {
 			fmt.Fprintf(os.Stderr, "%v\n", err)
+			_ = srv.Close()
 			return 1
 		}
 		fmt.Printf("Tailscale Funnel → 127.0.0.1:%d (public port %d)\n", o.port, o.funnelPort)
 	}
 
-	go func() {
-		<-ctx.Done()
-		shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_ = srv.Shutdown(shutCtx)
-		if !o.noFunnel {
-			if err := funnelReset(runner); err != nil {
-				log.Printf("warn: %v", err)
+	// Block until a signal arrives or the server stops on its own.
+	select {
+	case err := <-serveErr:
+		if err != nil && err != http.ErrServerClosed {
+			fmt.Fprintf(os.Stderr, "server error: %v\n", err)
+			if !o.noFunnel {
+				_ = funnelReset(runner)
 			}
+			return 1
 		}
-	}()
+	case <-ctx.Done():
+		fmt.Println("\nshutting down…")
+	}
 
-	log.Printf("listening on http://127.0.0.1:%d", o.port)
-	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		fmt.Fprintf(os.Stderr, "server error: %v\n", err)
-		return 1
+	// Graceful shutdown — run synchronously so the funnel is reset before we exit.
+	shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_ = srv.Shutdown(shutCtx)
+	if !o.noFunnel {
+		if err := funnelReset(runner); err != nil {
+			log.Printf("warn: %v", err)
+		} else {
+			fmt.Println("Tailscale Funnel reset.")
+		}
 	}
 	return 0
 }
