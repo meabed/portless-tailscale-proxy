@@ -68,7 +68,20 @@ type target struct {
 // When logRequests is true, each request is logged with method, status,
 // target, and duration.
 func newHandler(store *RouteStore, logRequests bool) http.Handler {
+	// A dedicated, bounded transport so idle connections to dev servers that come
+	// and go don't accumulate (capped pool + short idle timeout = steady memory).
+	transport := &http.Transport{
+		Proxy:                 http.ProxyFromEnvironment,
+		DialContext:           (&net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
+		MaxIdleConns:          64,
+		MaxIdleConnsPerHost:   8,
+		IdleConnTimeout:       60 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: time.Second,
+		ForceAttemptHTTP2:     true,
+	}
 	proxy := &httputil.ReverseProxy{
+		Transport:     transport,
 		FlushInterval: -1, // flush immediately: SSE / streaming / chunked
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			tgt := pr.In.Context().Value(targetKey).(target)
