@@ -7,3 +7,4 @@ node_modules/
 npm/dist/
 .idea
 .remember
+/tailscale-proxy
