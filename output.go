@@ -80,15 +80,22 @@ func printDiscovered(dcfg discoverConfig, mode Mode, httpsPort int) int {
 	return 0
 }
 
-// printDuplicateNotes warns about projects listening on multiple ports and which
-// instance is being served (the most recent), so the choice is transparent.
+// printDuplicateNotes explains projects that expose more than one service (the
+// main process gets the clean slug; others are suffixed), so it's transparent.
 func printDuplicateNotes(dups []Duplicate) {
 	if len(dups) == 0 {
 		return
 	}
-	fmt.Println("\nNote — these projects listen on multiple ports; serving the most recent:")
+	fmt.Println("\nNote — these projects expose multiple services (main + suffixed):")
 	for _, d := range dups {
-		fmt.Printf("  %s: %s\n", d.Slug, portList(d))
+		fmt.Printf("  %s:\n", d.Members[0].Dir)
+		for i, m := range d.Members {
+			tag := ""
+			if i == 0 {
+				tag = "  [main]"
+			}
+			fmt.Printf("    /%s/  →  :%d (%s, pid %d)%s\n", m.Slug, m.Port, runtimeOr(m.Runtime), m.PID, tag)
+		}
 	}
 }
 
@@ -115,16 +122,11 @@ func dirOr(dir string) string {
 	return dir
 }
 
-// portList renders all instance ports for a duplicate, marking the served one.
+// portList renders a project's services on one line: "/slug/ :port(runtime)".
 func portList(d Duplicate) string {
-	all := append([]Service{d.Chosen}, d.Others...)
-	parts := make([]string, 0, len(all))
-	for _, s := range all {
-		p := ":" + strconv.Itoa(s.Port) + "(pid " + strconv.Itoa(s.PID) + ")"
-		if s.Port == d.Chosen.Port && s.PID == d.Chosen.PID {
-			p += "←used"
-		}
-		parts = append(parts, p)
+	parts := make([]string, 0, len(d.Members))
+	for _, m := range d.Members {
+		parts = append(parts, "/"+m.Slug+"/ :"+strconv.Itoa(m.Port)+"("+runtimeOr(m.Runtime)+")")
 	}
 	return strings.Join(parts, ", ")
 }
@@ -135,10 +137,11 @@ func dupKey(dups []Duplicate) string {
 	for _, d := range dups {
 		b.WriteString(d.Slug)
 		b.WriteByte('=')
-		b.WriteString(strconv.Itoa(d.Chosen.Port))
-		for _, o := range d.Others {
+		for _, m := range d.Members {
+			b.WriteString(m.Slug)
+			b.WriteByte(':')
+			b.WriteString(strconv.Itoa(m.Port))
 			b.WriteByte(',')
-			b.WriteString(strconv.Itoa(o.Port))
 		}
 		b.WriteByte(';')
 	}

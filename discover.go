@@ -155,32 +155,21 @@ func slugify(name string) string {
 	return strings.Trim(s, "-")
 }
 
-// Duplicate records that several listeners mapped to one project slug: the one
-// chosen to serve (most recent), plus the others that were dropped.
+// Duplicate records a project folder that exposes more than one service (more
+// than one distinct process listening in it). Members holds them all, main first.
 type Duplicate struct {
-	Slug   string
-	Chosen Service
-	Others []Service // dropped instances (older), sorted by port
+	Slug    string
+	Members []Service // all services for this project, main (clean slug) first
 }
 
-// serviceOf builds a Service from a raw listener.
+// serviceOf builds a Service from a raw listener under a given slug.
 func serviceOf(l listener, slug string) Service {
 	return Service{Slug: slug, Port: l.Port, Runtime: classifyRuntime(l.Comm), Dir: l.Cwd, PID: l.PID}
 }
 
-// moreRecent reports whether listener a is "more recent" than b: a newer process
-// (higher PID), tie-broken by the higher port. Used to pick which instance of a
-// project to serve when the same project listens on several ports.
-func moreRecent(a, b listener) bool {
-	if a.PID != b.PID {
-		return a.PID > b.PID
-	}
-	return a.Port > b.Port
-}
-
-// baseSlug derives a service slug from a listener: the project-root folder name,
-// or "<runtime>-<port>" / "port-<port>" when there's no discoverable project.
-func baseSlug(l listener) string {
+// projectBaseSlug derives the clean project slug from a working directory, or
+// "<runtime>-<port>" / "port-<port>" when there's no discoverable project.
+func projectBaseSlug(l listener) string {
 	slug := slugify(projectRoot(l.Cwd))
 	if slug != "" {
 		return slug
@@ -191,27 +180,30 @@ func baseSlug(l listener) string {
 	return "port-" + strconv.Itoa(l.Port)
 }
 
-// buildServices filters listeners to web runtimes and collapses every listener
-// that belongs to the same project (same project-root directory) into ONE
-// service — the most recent instance — so the URL path is just the project name
-// with no port suffix. Genuinely-distinct projects that happen to share a folder
-// name get a "-<port>" suffix to stay unique. Dropped instances are returned as
-// Duplicates so the caller can surface them.
+// buildServices turns raw listeners into routable services.
+//
+//   - Listeners are grouped by project-root directory.
+//   - Multiple ports from the SAME process (e.g. a dev server + its HMR port)
+//     collapse to that process's lowest port — one entry per process.
+//   - Within a project, the process on the LOWEST port is the "main" service and
+//     gets the clean project slug; every other distinct process is kept too, with
+//     a "-<port>" suffix (so an auxiliary tool in the same folder stays reachable).
+//   - Distinct projects that share a folder name get a "-<port>" suffix on their
+//     main slug to stay unique.
+//
+// Projects exposing more than one service are returned as Duplicates for display.
 func buildServices(listeners []listener, includeAll bool, runtimes map[string]bool) ([]Service, []Duplicate) {
-	// Group by project-root directory; listeners with no discoverable project are
-	// each their own group (nothing to collapse on).
+	// Group surviving listeners by project-root dir (ungroupable → unique key).
 	groups := map[string][]listener{}
 	order := []string{}
 	for _, l := range listeners {
 		rt := classifyRuntime(l.Comm)
-		if !includeAll {
-			if rt == "" || (runtimes != nil && !runtimes[rt]) {
-				continue
-			}
+		if !includeAll && (rt == "" || (runtimes != nil && !runtimes[rt])) {
+			continue
 		}
 		key := projectRootDir(l.Cwd)
 		if key == "" {
-			key = "\x00port:" + strconv.Itoa(l.Port) // ungroupable, unique per listener
+			key = "\x00port:" + strconv.Itoa(l.Port)
 		}
 		if _, seen := groups[key]; !seen {
 			order = append(order, key)
@@ -219,47 +211,53 @@ func buildServices(listeners []listener, includeAll bool, runtimes map[string]bo
 		groups[key] = append(groups[key], l)
 	}
 
-	// Pick the most-recent instance per group and its base slug.
-	type chosenGroup struct {
-		ls   []listener
-		best listener
-		slug string
+	// Per project: one entry per process (its lowest port), sorted by port.
+	type project struct {
+		procs []listener // distinct processes, lowest-port first; procs[0] is "main"
+		slug  string     // base (clean) slug
 	}
-	chosen := make([]chosenGroup, 0, len(order))
+	projects := make([]project, 0, len(order))
 	slugCounts := map[string]int{}
 	for _, key := range order {
-		ls := groups[key]
-		best := ls[0]
-		for _, l := range ls[1:] {
-			if moreRecent(l, best) {
-				best = l
+		byPID := map[int]listener{}
+		pidOrder := []int{}
+		for _, l := range groups[key] {
+			if cur, ok := byPID[l.PID]; !ok {
+				byPID[l.PID] = l
+				pidOrder = append(pidOrder, l.PID)
+			} else if l.Port < cur.Port {
+				byPID[l.PID] = l
 			}
 		}
-		slug := baseSlug(best)
-		chosen = append(chosen, chosenGroup{ls: ls, best: best, slug: slug})
+		procs := make([]listener, 0, len(pidOrder))
+		for _, pid := range pidOrder {
+			procs = append(procs, byPID[pid])
+		}
+		sort.Slice(procs, func(i, j int) bool { return procs[i].Port < procs[j].Port })
+		slug := projectBaseSlug(procs[0])
+		projects = append(projects, project{procs: procs, slug: slug})
 		slugCounts[slug]++
 	}
 
-	// Different projects sharing a folder name → suffix with port to disambiguate.
 	var services []Service
 	var dups []Duplicate
-	for _, g := range chosen {
-		slug := g.slug
-		if slugCounts[slug] > 1 {
-			slug = slug + "-" + strconv.Itoa(g.best.Port)
+	for _, p := range projects {
+		mainSlug := p.slug
+		if slugCounts[mainSlug] > 1 { // distinct projects share a folder name
+			mainSlug = mainSlug + "-" + strconv.Itoa(p.procs[0].Port)
 		}
-		chosenSvc := serviceOf(g.best, slug)
-		services = append(services, chosenSvc)
-		if len(g.ls) > 1 {
-			others := make([]Service, 0, len(g.ls)-1)
-			for _, l := range g.ls {
-				if l.PID == g.best.PID && l.Port == g.best.Port {
-					continue
-				}
-				others = append(others, serviceOf(l, slug))
+		members := make([]Service, 0, len(p.procs))
+		for i, proc := range p.procs {
+			slug := mainSlug
+			if i > 0 { // not the main process → suffix to stay reachable
+				slug = mainSlug + "-" + strconv.Itoa(proc.Port)
 			}
-			sort.Slice(others, func(i, j int) bool { return others[i].Port < others[j].Port })
-			dups = append(dups, Duplicate{Slug: slug, Chosen: chosenSvc, Others: others})
+			svc := serviceOf(proc, slug)
+			members = append(members, svc)
+			services = append(services, svc)
+		}
+		if len(members) > 1 {
+			dups = append(dups, Duplicate{Slug: mainSlug, Members: members})
 		}
 	}
 	sort.Slice(services, func(i, j int) bool { return services[i].Slug < services[j].Slug })

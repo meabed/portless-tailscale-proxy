@@ -107,52 +107,52 @@ func TestBuildServices_filtersUnknownRuntime(t *testing.T) {
 	}
 }
 
-func TestBuildServices_collapsesSameProjectMostRecent(t *testing.T) {
-	// Same project dir, two instances (a restart leftover). The most recent
-	// (highest PID) is served under a clean slug; the other is reported as a dup.
+func TestBuildServices_distinctProcessesSameFolder(t *testing.T) {
+	// Same project folder, two DISTINCT processes: the real dev server (bun :3087)
+	// and a tool (node :4983, e.g. @ai-sdk/devtools). BOTH are exposed — the
+	// lowest-port process is "main" (clean slug); the other is suffixed so it
+	// stays reachable.
 	root := t.TempDir()
 	agent := mkProject(t, root, "module-help-ai-agent-api")
 	svcs, dups := buildServices([]listener{
-		{Port: 4983, PID: 15588, Comm: "node", Cwd: agent}, // older
-		{Port: 3087, PID: 79759, Comm: "bun", Cwd: agent},  // newer (higher pid)
+		{Port: 4983, PID: 15588, Comm: "node", Cwd: agent}, // devtools
+		{Port: 3087, PID: 79759, Comm: "bun", Cwd: agent},  // real service (lowest port)
 	}, false, nil)
 
 	got := svcMap(svcs)
-	s, ok := got["module-help-ai-agent-api"]
-	if !ok {
-		t.Fatalf("expected clean slug 'module-help-ai-agent-api', got %v", keysOf(got))
+	if len(got) != 2 {
+		t.Fatalf("expected BOTH services exposed, got %v", keysOf(got))
 	}
-	if len(got) != 1 {
-		t.Fatalf("expected exactly one service (collapsed), got %v", keysOf(got))
+	main, ok := got["module-help-ai-agent-api"]
+	if !ok || main.Port != 3087 {
+		t.Fatalf("main (lowest port) should be :3087 under the clean slug, got %v", keysOf(got))
 	}
-	if s.Port != 3087 || s.PID != 79759 {
-		t.Errorf("expected to serve most recent (pid 79759 :3087), got :%d pid %d", s.Port, s.PID)
+	other, ok := got["module-help-ai-agent-api-4983"]
+	if !ok || other.Port != 4983 {
+		t.Fatalf("the tool should be suffixed as -4983, got %v", keysOf(got))
 	}
-	if len(dups) != 1 || dups[0].Slug != "module-help-ai-agent-api" {
-		t.Fatalf("expected one duplicate note, got %+v", dups)
-	}
-	if dups[0].Chosen.Port != 3087 || len(dups[0].Others) != 1 || dups[0].Others[0].Port != 4983 {
-		t.Errorf("duplicate should list :4983 as the dropped other, got %+v", dups[0])
+	if len(dups) != 1 || len(dups[0].Members) != 2 || dups[0].Members[0].Port != 3087 {
+		t.Fatalf("expected one project note with main :3087 first, got %+v", dups)
 	}
 }
 
 func TestBuildServices_sameProcessMultiPort(t *testing.T) {
-	// One process listening on two ports (e.g. a dev server + its sidecar). Same
-	// PID → tie-break to the higher port; collapses to one clean slug.
+	// One process listening on two ports (dev server + its HMR port). Collapses to
+	// that process's lowest port — one clean service, NOT a duplicate.
 	root := t.TempDir()
 	web := mkProject(t, root, "web-www-help-ai")
 	svcs, dups := buildServices([]listener{
-		{Port: 4206, PID: 78327, Comm: "node", Cwd: web},
 		{Port: 4501, PID: 78327, Comm: "node", Cwd: web},
+		{Port: 4206, PID: 78327, Comm: "node", Cwd: web},
 	}, false, nil)
 	if len(svcs) != 1 || svcs[0].Slug != "web-www-help-ai" {
 		t.Fatalf("expected one clean slug, got %+v", svcs)
 	}
-	if svcs[0].Port != 4501 {
-		t.Errorf("same-pid tie-break should pick higher port 4501, got %d", svcs[0].Port)
+	if svcs[0].Port != 4206 {
+		t.Errorf("a single process should collapse to its lowest port 4206, got %d", svcs[0].Port)
 	}
-	if len(dups) != 1 || len(dups[0].Others) != 1 || dups[0].Others[0].Port != 4206 {
-		t.Errorf("expected :4206 reported as dropped, got %+v", dups)
+	if len(dups) != 0 {
+		t.Errorf("a single process is not a duplicate, got %+v", dups)
 	}
 }
 
@@ -220,16 +220,6 @@ func TestParsePortRange(t *testing.T) {
 		if _, err := parsePortRange(bad); err == nil {
 			t.Errorf("expected error for %q", bad)
 		}
-	}
-}
-
-func TestMoreRecent(t *testing.T) {
-	// Higher PID wins; equal PID → higher port wins.
-	if !moreRecent(listener{PID: 20, Port: 3000}, listener{PID: 10, Port: 9000}) {
-		t.Error("higher pid should be more recent")
-	}
-	if !moreRecent(listener{PID: 5, Port: 4501}, listener{PID: 5, Port: 4206}) {
-		t.Error("equal pid → higher port should be more recent")
 	}
 }
 

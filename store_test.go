@@ -113,16 +113,18 @@ func TestRouteStore_repointOnPortChange(t *testing.T) {
 
 func TestRouteStore_exposesDuplicates(t *testing.T) {
 	dup := Duplicate{
-		Slug:   "a",
-		Chosen: Service{Slug: "a", Port: 3087, PID: 79759},
-		Others: []Service{{Slug: "a", Port: 4983, PID: 15588}},
+		Slug: "a",
+		Members: []Service{
+			{Slug: "a", Port: 3087, PID: 79759, Runtime: "bun"},
+			{Slug: "a-4983", Port: 4983, PID: 15588, Runtime: "node"},
+		},
 	}
 	store := NewRouteStore(func() ([]Service, []Duplicate, error) {
 		return []Service{{Slug: "a", Port: 3087, Runtime: "bun"}}, []Duplicate{dup}, nil
 	}, 1)
 	store.refresh()
 	got := store.dupes()
-	if len(got) != 1 || got[0].Slug != "a" || got[0].Chosen.Port != 3087 || got[0].Others[0].Port != 4983 {
-		t.Fatalf("store.dupes() = %+v, want the agent-api duplicate", got)
+	if len(got) != 1 || got[0].Slug != "a" || len(got[0].Members) != 2 || got[0].Members[1].Slug != "a-4983" {
+		t.Fatalf("store.dupes() = %+v, want the agent-api project with 2 members", got)
 	}
 }

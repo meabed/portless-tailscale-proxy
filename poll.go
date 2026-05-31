@@ -32,8 +32,7 @@ func poll(ctx context.Context, store *RouteStore, interval time.Duration) {
 		if key := dupKey(dups); key != lastDupKey {
 			lastDupKey = key
 			for _, d := range dups {
-				log.Printf("note: %q listens on %d ports [%s] — serving :%d (pid %d, most recent)",
-					d.Slug, len(d.Others)+1, portList(d), d.Chosen.Port, d.Chosen.PID)
+				log.Printf("note: project exposes %d services — %s", len(d.Members), portList(d))
 			}
 		}
 	}
