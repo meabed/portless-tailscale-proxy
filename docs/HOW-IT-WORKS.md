@@ -45,8 +45,12 @@ listening, names each by its project folder, and proxies to it.
 3. **Slug** = the nearest project-root folder name walking up from the working
    directory (markers: `package.json`, `.git`, `go.mod`, `pyproject.toml`,
    `Cargo.toml`, `deno.json`, `composer.json`, `Gemfile`). No cwd → `<runtime>-<port>`.
-4. **De-duplicate** — colliding slugs get a `-<port>` suffix (and `-<pid>` as a
-   final tie-break).
+4. **Collapse duplicates** — all listeners belonging to the **same project**
+   (same project-root directory) are collapsed into one service, serving the
+   **most recent instance** (highest PID, then higher port) under a clean,
+   port-free slug. The dropped instances are surfaced in the logs / `list` /
+   `status` so the choice is transparent. Two *distinct* projects that happen to
+   share a folder name still get a `-<port>` suffix to stay unique.
 
 ## Routing
 
@@ -60,6 +64,23 @@ For `/<segment>/<rest...>?<query>`:
 
 The proxy uses a single bounded `http.Transport` (capped idle pool + 60s idle
 timeout) so connections to dev servers that come and go don't accumulate.
+
+### Cookie route-affinity (so apps render correctly)
+
+Apps assume they live at the site root, so their HTML references absolute paths
+(`/_next/static/...`, `/api/...`, the HMR WebSocket). Under path routing those
+requests arrive *without* the `/<slug>/` prefix and would 404 — the page would
+load with no CSS/JS.
+
+To fix this, when a request matches `/<slug>/...` the proxy sets a `tsp_route`
+cookie pinning the browser to that project. A subsequent **prefix-less** request
+(no matching slug) is routed, full-path, to the cookie's backend. So after you
+open `…/web/`, that tab's `/_next/...`, `/api/...`, and HMR requests all reach the
+`web` dev server and the page renders exactly like `localhost`.
+
+Caveat: affinity is per-browser, so actively using two different apps in the same
+browser at once isn't supported — open them in separate browsers/profiles, or
+visit each via its `/<slug>/` URL to switch.
 
 ## State, debounce, and lifecycle
 

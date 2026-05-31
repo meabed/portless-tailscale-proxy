@@ -40,11 +40,31 @@ Funnel relay.
 Discovery uses `lsof`. Install it: `apt install lsof` / `dnf install lsof`. macOS
 ships it. `tsp doctor` reports this under "service discovery".
 
+## A page loads without styles / behaves differently than localhost
+
+Fixed by cookie route-affinity: visiting `…/<slug>/` sets a `tsp_route` cookie so
+that tab's prefix-less requests (`/_next/...`, `/api/...`, HMR) reach the right
+backend. If a page still looks wrong:
+
+- Make sure you opened it via its **`/<slug>/`** URL (that's what sets the cookie),
+  not a bare asset URL.
+- Don't actively use two different apps in the **same browser** at once — affinity
+  is per-browser. Use separate browsers/profiles, or re-visit the `/<slug>/` URL to
+  switch which app the tab is pinned to.
+
+## The same project shows on multiple ports
+
+`tsp` collapses every listener of the **same project** into one entry and serves the
+**most recent** instance (highest PID, then higher port) — so a restart leftover or
+a dev server that binds two ports won't create duplicate routes. The chosen and
+dropped ports/pids are shown in `tsp list`/`status` and the startup logs. If the
+wrong instance is chosen, stop the stale one (the logs print its pid).
+
 ## Wrong project name, or a `-<port>` suffix on a slug
 
 The slug is the nearest project-root folder (the directory containing
-`package.json`/`.git`/etc.). Two servers that resolve to the same project name get a
-`-<port>` suffix so each is unique — that's expected. Check `tsp list` for the
+`package.json`/`.git`/etc.). Two **distinct** projects that share a folder name get a
+`-<port>` suffix so each stays unique — that's expected. Check `tsp list` for the
 canonical slugs.
 
 ## A service disappeared but the route lingers (or vice-versa)
