@@ -5,6 +5,11 @@ on:
   pull_request:
 permissions:
   contents: read
+env:
+  # GitHub forbids `secrets.*` directly in some `if:` expressions, so expose
+  # boolean flags once here and reuse them in the notify steps below.
+  HAS_SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL != '' }}
+  HAS_DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL != '' }}
 jobs:
   test:
     name: test (${{ matrix.os }})
@@ -45,3 +50,59 @@ jobs:
             GOOS=$os GOARCH=$arch go build -o /dev/null .
             echo "::endgroup::"
           done
+
+  notify:
+    name: Notify
+    # Aggregate the matrix + cross-build into one message. !cancelled() posts on
+    # success and failure but stays quiet on superseded builds; push-only so PRs
+    # don't ping. Each step self-skips when its webhook secret is missing.
+    needs: [test, cross-build]
+    if: ${{ !cancelled() && github.event_name == 'push' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve overall result
+        id: r
+        run: |
+          if [ "${{ needs.test.result }}" = "success" ] && [ "${{ needs.cross-build.result }}" = "success" ]; then
+            echo "status=success" >> "$GITHUB_OUTPUT"
+          else
+            echo "status=failure" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Notify Slack
+        # !cancelled() → notify on success and failure, skip superseded builds.
+        if: ${{ env.HAS_SLACK_WEBHOOK_URL == 'true' }}
+        # Official, Slack-maintained action (replaces the archived 8398a7/action-slack).
+        uses: slackapi/slack-github-action@v3.0.3
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          # Status-aware. Only trusted GitHub context fields are interpolated
+          # (injection-safe — no commit/PR free-text).
+          payload: |
+            text: "${{ steps.r.outputs.status == 'success' && ':white_check_mark:' || ':x:' }} ${{ github.repository }} ci ${{ steps.r.outputs.status }} on ${{ github.ref_name }}"
+            blocks:
+              - type: "section"
+                text:
+                  type: "mrkdwn"
+                  text: "${{ steps.r.outputs.status == 'success' && ':white_check_mark:' || ':x:' }} *${{ github.repository }}* ci *${{ steps.r.outputs.status }}* on `${{ github.ref_name }}`\n*Workflow:* ${{ github.workflow }}  •  *By:* ${{ github.actor }}  •  *Commit:* `${{ github.sha }}`"
+              - type: "actions"
+                elements:
+                  - type: "button"
+                    text:
+                      type: "plain_text"
+                      text: "View run"
+                    url: "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+      - name: Notify Discord
+        # !cancelled() → notify on success and failure; sarisia colors the embed by status.
+        if: ${{ env.HAS_DISCORD_WEBHOOK_URL == 'true' }}
+        uses: sarisia/actions-status-discord@v1
+        with:
+          webhook: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          status: ${{ steps.r.outputs.status }}
+          title: ${{ github.repository }}
+          # Ping @here only when it needs attention (failure); quiet on success.
+          content: "${{ steps.r.outputs.status != 'success' && '@here' || '' }}"
+          username: GitHub Actions
+          nofail: true
