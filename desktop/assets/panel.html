@@ -5,153 +5,182 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Tailscale Proxy</title>
 <style>
+/* Hallmark · component: menu-bar panel · genre: modern-minimal · theme: native-dark
+ * pre-emit critique: P5 H5 E5 S5 R4 V4
+ * single cool accent · translucent macOS hairlines · tabular/mono numerals
+ */
   :root {
-    --bg: oklch(15.5% 0.012 256);
-    --panel: oklch(20% 0.013 256);
-    --panel-2: oklch(24% 0.014 256);
-    --line: oklch(30% 0.012 256);
-    --fg: oklch(94% 0.01 256);
-    --muted: oklch(67% 0.012 256);
-    --accent: oklch(72% 0.15 256);
-    --accent-press: oklch(66% 0.15 256);
-    --green: oklch(74% 0.17 150);
-    --red: oklch(68% 0.2 22);
-    --radius: 12px;
-    --radius-sm: 8px;
-    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+    --bg: oklch(17.5% 0.008 264);
+    --raise: oklch(21.5% 0.009 264);
+    --raise-2: oklch(25.5% 0.01 264);
+    --hair: oklch(100% 0 0 / 0.07);
+    --hair-2: oklch(100% 0 0 / 0.12);
+    --fg: oklch(97% 0.004 264);
+    --fg-2: oklch(73% 0.008 264);
+    --fg-3: oklch(56% 0.008 264);
+    --accent: oklch(65% 0.155 256);
+    --accent-fg: oklch(98% 0.01 256);
+    --on: oklch(74% 0.16 152);
+    --off: oklch(66% 0.17 24);
+
+    --r-xs: 6px; --r-sm: 8px; --r: 10px;
+    --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px;
+    --ease: cubic-bezier(0.32, 0.72, 0, 1);
+    --dur: 150ms;
+    --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body { background: var(--bg); color: var(--fg); font-size: 13px; -webkit-font-smoothing: antialiased; user-select: none; }
-  body { padding: 12px; }
-  a { color: inherit; text-decoration: none; }
+  html, body { background: var(--bg); color: var(--fg); font: 13px/1.45 var(--sans); -webkit-font-smoothing: antialiased; user-select: none; }
+  body { padding: var(--s3); }
+  button { font: inherit; cursor: default; color: inherit; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--r-xs); }
+  .num { font-variant-numeric: tabular-nums; }
 
-  .head { display: flex; align-items: center; gap: 9px; padding: 2px 4px 12px; }
-  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex: none; box-shadow: 0 0 0 3px transparent; transition: .2s; }
-  .dot.on { background: var(--green); box-shadow: 0 0 0 3px color-mix(in oklab, var(--green) 22%, transparent); }
-  .title { font-weight: 650; letter-spacing: -.01em; }
-  .node { margin-left: auto; color: var(--muted); font-size: 11.5px; font-variant-numeric: tabular-nums; max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* Status header */
+  .head { display: flex; align-items: baseline; gap: var(--s2); padding: var(--s1) 2px var(--s3); }
+  .state { display: flex; align-items: center; gap: 7px; font-weight: 600; letter-spacing: -.012em; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--fg-3); transition: background var(--dur) var(--ease), box-shadow var(--dur) var(--ease); }
+  .on .dot { background: var(--on); box-shadow: 0 0 0 3px color-mix(in oklab, var(--on) 20%, transparent); }
+  .mode-tag { color: var(--fg-3); font-weight: 500; }
+  .node { margin-left: auto; color: var(--fg-3); font: 11px/1 var(--mono); letter-spacing: -.02em; max-width: 168px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-  .row { display: flex; align-items: center; gap: 8px; }
-  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); }
+  /* Primary action */
+  .power { width: 100%; display: flex; align-items: center; justify-content: center; gap: 7px; border: 1px solid transparent; border-radius: var(--r); padding: 8px; font-weight: 600; font-size: 13px; letter-spacing: -.01em; transition: filter var(--dur) var(--ease), transform var(--dur) var(--ease), background var(--dur) var(--ease); }
+  .power svg { width: 14px; height: 14px; }
+  .power.start { background: var(--on); color: oklch(20% 0.03 152); }
+  .power.stop { background: var(--raise); border-color: var(--hair-2); color: var(--off); }
+  .power:hover { filter: brightness(1.06); }
+  .power:active { transform: scale(0.985); filter: brightness(0.96); }
+  .power[disabled] { opacity: .55; }
 
-  .power { width: 100%; border: none; border-radius: var(--radius); padding: 12px; font: inherit; font-weight: 650; font-size: 14px; cursor: pointer; color: #fff; background: var(--green); transition: .15s; letter-spacing: -.01em; }
-  .power.stop { background: var(--red); }
-  .power:active { transform: translateY(1px); filter: brightness(.95); }
-  .power[disabled] { opacity: .55; cursor: default; }
+  /* Segmented mode toggle */
+  .seg { position: relative; display: grid; grid-template-columns: 1fr 1fr; background: var(--raise); border: 1px solid var(--hair); border-radius: var(--r-sm); padding: 3px; margin-top: var(--s2); }
+  .seg .ind { position: absolute; top: 3px; bottom: 3px; left: 3px; width: calc(50% - 3px); background: var(--accent); border-radius: 6px; transition: transform var(--dur) var(--ease); }
+  .seg.priv .ind { transform: translateX(100%); }
+  .seg button { position: relative; z-index: 1; border: 0; background: 0; color: var(--fg-2); font-weight: 550; font-size: 12px; padding: 6px 4px; transition: color var(--dur) var(--ease); }
+  .seg button.sel { color: var(--accent-fg); }
 
-  .seg { display: flex; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 3px; margin-top: 10px; }
-  .seg button { flex: 1; border: none; background: transparent; color: var(--muted); font: inherit; font-weight: 550; padding: 7px 6px; border-radius: 6px; cursor: pointer; transition: .12s; }
-  .seg button.active { background: var(--accent); color: #fff; }
+  /* Section header */
+  .sec { display: flex; align-items: center; gap: var(--s2); margin: var(--s4) 2px var(--s2); }
+  .sec .lbl { color: var(--fg-3); font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .07em; }
+  .sec .count { color: var(--fg-2); font: 10px var(--mono); background: var(--raise); border: 1px solid var(--hair); border-radius: 999px; padding: 1px 7px; }
+  .icon-btn { margin-left: auto; width: 24px; height: 24px; display: grid; place-items: center; border: 0; background: 0; color: var(--fg-3); border-radius: var(--r-xs); transition: color var(--dur) var(--ease), background var(--dur) var(--ease); }
+  .icon-btn:hover { color: var(--fg); background: var(--raise); }
+  .icon-btn.spin svg { animation: spin .55s var(--ease); }
+  @keyframes spin { to { transform: rotate(360deg); } }
 
-  .sechead { display: flex; align-items: center; margin: 16px 4px 8px; color: var(--muted); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; }
-  .sechead .count { margin-left: auto; background: var(--panel-2); border-radius: 999px; padding: 1px 8px; font-size: 10.5px; }
+  /* Service rows */
+  .list { display: flex; flex-direction: column; gap: 5px; max-height: 326px; overflow-y: auto; margin: 0 -2px; padding: 0 2px; }
+  .svc { display: grid; grid-template-columns: auto 1fr auto; align-items: center; column-gap: var(--s3); padding: 8px 10px; background: var(--raise); border: 1px solid var(--hair); border-radius: var(--r-sm); transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease); }
+  .svc:hover { background: var(--raise-2); border-color: var(--hair-2); }
+  .badge { align-self: start; margin-top: 1px; font: 9px/1 var(--mono); font-weight: 600; letter-spacing: .02em; color: var(--accent); background: color-mix(in oklab, var(--accent) 16%, transparent); border-radius: 4px; padding: 4px 5px; text-transform: lowercase; }
+  .meta { min-width: 0; }
+  .slug { font-weight: 600; letter-spacing: -.012em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .addr { color: var(--fg-2); font: 11px var(--mono); margin-top: 2px; }
+  .addr .pid { color: var(--fg-3); }
+  .dir { color: var(--fg-3); font-size: 10.5px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .open { width: 28px; height: 28px; display: grid; place-items: center; border: 1px solid var(--hair); background: 0; color: var(--fg-2); border-radius: var(--r-xs); transition: all var(--dur) var(--ease); }
+  .open:hover { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+  .open:active { transform: scale(0.94); }
 
-  .list { display: flex; flex-direction: column; gap: 6px; max-height: 280px; overflow-y: auto; }
-  .svc { display: flex; align-items: center; gap: 10px; padding: 9px 11px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-sm); transition: .12s; }
-  .svc:hover { border-color: color-mix(in oklab, var(--accent) 45%, var(--line)); }
-  .svc .meta { min-width: 0; }
-  .svc .slug { font-weight: 600; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .svc .sub { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; margin-top: 1px; }
-  .badge { flex: none; font-size: 10px; font-weight: 600; color: var(--accent); background: color-mix(in oklab, var(--accent) 15%, transparent); border-radius: 5px; padding: 2px 6px; text-transform: lowercase; }
-  .open { margin-left: auto; flex: none; width: 28px; height: 28px; display: grid; place-items: center; border-radius: 6px; background: var(--panel-2); color: var(--muted); cursor: pointer; transition: .12s; }
-  .open:hover { background: var(--accent); color: #fff; }
-  .empty { color: var(--muted); text-align: center; padding: 22px 10px; line-height: 1.5; }
-
-  .foot { display: flex; flex-direction: column; gap: 2px; margin-top: 14px; border-top: 1px solid var(--line); padding-top: 8px; }
-  .item { display: flex; align-items: center; gap: 8px; padding: 8px 6px; border-radius: var(--radius-sm); color: var(--fg); cursor: pointer; font-weight: 500; }
-  .item:hover { background: var(--panel); }
-  .item .k { margin-left: auto; color: var(--muted); font-size: 11px; }
-  .switch { margin-left: auto; width: 34px; height: 20px; border-radius: 999px; background: var(--line); position: relative; transition: .15s; flex: none; }
-  .switch.on { background: var(--accent); }
-  .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: .15s; }
-  .switch.on::after { transform: translateX(14px); }
-  .quit { color: var(--red); }
-  .err { color: var(--red); font-size: 11.5px; padding: 6px 8px; margin-top: 8px; background: color-mix(in oklab, var(--red) 12%, transparent); border-radius: var(--radius-sm); display: none; }
+  .empty { color: var(--fg-3); text-align: center; padding: 26px 16px; line-height: 1.55; font-size: 12.5px; }
+  .err { color: var(--off); font-size: 11.5px; line-height: 1.4; padding: 8px 10px; margin-top: var(--s2); background: color-mix(in oklab, var(--off) 13%, transparent); border: 1px solid color-mix(in oklab, var(--off) 28%, transparent); border-radius: var(--r-sm); display: none; }
   .err.show { display: block; }
+
+  /* Footer */
+  .foot { display: flex; gap: 6px; margin-top: var(--s3); padding-top: var(--s3); border-top: 1px solid var(--hair); }
+  .ghost { flex: 1; border: 1px solid var(--hair); background: var(--raise); border-radius: var(--r-sm); padding: 7px 4px; font-size: 12px; font-weight: 500; color: var(--fg-2); transition: all var(--dur) var(--ease); }
+  .ghost:hover { background: var(--raise-2); color: var(--fg); border-color: var(--hair-2); }
+  .ghost:active { transform: scale(0.97); }
+  .ghost.danger { flex: 0 0 auto; padding: 7px 13px; color: var(--off); }
+  .ghost.danger:hover { background: color-mix(in oklab, var(--off) 15%, transparent); border-color: color-mix(in oklab, var(--off) 30%, transparent); }
+
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
 </head>
 <body>
-  <div class="head">
-    <span class="dot" id="dot"></span>
-    <span class="title">Tailscale Proxy</span>
-    <span class="node" id="node"></span>
+  <div class="head" id="head">
+    <span class="state"><span class="dot"></span><span id="stateText">Stopped</span><span class="mode-tag" id="modeTag"></span></span>
+    <span class="node num" id="node"></span>
   </div>
 
-  <button class="power" id="power" onclick="toggle()">Start</button>
+  <button class="power start" id="power" onclick="toggle()">
+    <svg id="powerIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v8"/><path d="M7.5 7a7 7 0 1 0 9 0"/></svg>
+    <span id="powerText">Start</span>
+  </button>
   <div class="err" id="err"></div>
 
   <div class="seg" id="seg">
-    <button data-private="false" onclick="setMode(false)">Public · Funnel</button>
+    <span class="ind"></span>
+    <button data-private="false" class="sel" onclick="setMode(false)">Public · Funnel</button>
     <button data-private="true" onclick="setMode(true)">Private · Serve</button>
   </div>
 
-  <div class="sechead">Services <span class="count" id="count">0</span></div>
+  <div class="sec">
+    <span class="lbl">Services</span><span class="count num" id="count">0</span>
+    <button class="icon-btn" id="refresh" title="Refresh now" onclick="refreshNow()" aria-label="Refresh">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6"/></svg>
+    </button>
+  </div>
   <div class="list" id="list"></div>
 
   <div class="foot">
-    <div class="item" onclick="toggleAutostart()">Start at login <span class="switch" id="autostart"></span></div>
-    <div class="item" onclick="api('/api/openconfig')">Open config file <span class="k">⌘,</span></div>
-    <div class="item" onclick="open_('https://tailscaleproxy.vercel.app')">Documentation ↗</div>
-    <div class="item quit" onclick="api('/api/quit')">Quit</div>
+    <button class="ghost" onclick="api('/api/settings')">Settings…</button>
+    <button class="ghost" onclick="api('/api/openconfig')">Config</button>
+    <button class="ghost danger" onclick="api('/api/quit')">Quit</button>
   </div>
 
 <script>
   const TOKEN = "__TOKEN__";
-  const H = { headers: { "X-TSP-Token": TOKEN } };
+  const HDR = { "X-TSP-Token": TOKEN };
   const $ = (id) => document.getElementById(id);
 
   async function api(path, body) {
-    try {
-      await fetch(path, { method: "POST", headers: H.headers, body: body ? JSON.stringify(body) : null });
-    } catch (e) {}
+    try { await fetch(path, { method: "POST", headers: HDR, body: body ? JSON.stringify(body) : null }); } catch (e) {}
     refresh();
   }
   const toggle = () => { $("power").disabled = true; api("/api/toggle"); };
   const setMode = (priv) => api("/api/mode", { private: priv });
-  const toggleAutostart = () => api("/api/autostart", { on: !$("autostart").classList.contains("on") });
   const open_ = (url) => api("/api/open", { url });
+  function refreshNow() { $("refresh").classList.add("spin"); setTimeout(() => $("refresh").classList.remove("spin"), 560); api("/api/refresh"); }
 
-  // Build a service row with safe DOM APIs (slugs come from folder names —
-  // never interpolate them into HTML).
+  function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+  function tilde(p) { const a = p.split("/").filter(Boolean); return a.length > 3 ? "…/" + a.slice(-2).join("/") : p; }
+
   function svcRow(v) {
-    const row = document.createElement("div");
-    row.className = "svc";
-    const badge = document.createElement("span");
-    badge.className = "badge";
-    badge.textContent = v.runtime || "?";
-    const meta = document.createElement("div");
-    meta.className = "meta";
-    const slug = document.createElement("div");
-    slug.className = "slug";
-    slug.textContent = v.slug;
-    const sub = document.createElement("div");
-    sub.className = "sub";
-    sub.textContent = "127.0.0.1:" + v.port;
-    meta.append(slug, sub);
-    row.append(badge, meta);
+    const row = el("div", "svc");
+    const meta = el("div", "meta");
+    meta.append(el("div", "slug", v.slug));
+    const addr = el("div", "addr num");
+    addr.append(el("span", null, "127.0.0.1:" + v.port));
+    if (v.pid) addr.append(el("span", "pid", "  ·  pid " + v.pid));
+    meta.append(addr);
+    if (v.dir) { const d = el("div", "dir", tilde(v.dir)); d.title = v.dir; meta.append(d); }
+    row.append(el("span", "badge", v.runtime || "?"), meta);
     if (v.url) {
-      const btn = document.createElement("div");
-      btn.className = "open";
-      btn.title = "Open " + v.url;
-      btn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M9 7h8v8"/></svg>';
+      const btn = el("button", "open"); btn.title = "Open " + v.url;
+      btn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M9 7h8v8"/></svg>';
       btn.addEventListener("click", () => open_(v.url));
-      row.appendChild(btn);
+      row.append(btn);
     }
     return row;
   }
 
   function render(s) {
-    $("dot").className = "dot" + (s.running ? " on" : "");
+    $("head").classList.toggle("on", s.running);
+    $("stateText").textContent = s.running ? "Running" : "Stopped";
+    $("modeTag").textContent = s.running && s.mode ? "·  " + (s.private ? "Serve" : "Funnel") : "";
     $("node").textContent = s.node || "";
+
     const power = $("power");
     power.disabled = false;
-    power.textContent = s.running ? "Stop" : "Start";
-    power.className = "power" + (s.running ? " stop" : "");
+    power.className = "power " + (s.running ? "stop" : "start");
+    $("powerText").textContent = s.running ? "Stop" : "Start";
 
-    for (const b of document.querySelectorAll("#seg button"))
-      b.classList.toggle("active", String(s.private) === b.dataset.private);
+    $("seg").classList.toggle("priv", !!s.private);
+    for (const b of document.querySelectorAll(".seg button")) b.classList.toggle("sel", String(s.private) === b.dataset.private);
 
-    $("autostart").classList.toggle("on", !!s.autostart);
     $("err").className = "err" + (s.err ? " show" : "");
     $("err").textContent = s.err || "";
 
@@ -160,22 +189,14 @@
     const list = $("list");
     list.textContent = "";
     if (!svcs.length) {
-      const e = document.createElement("div");
-      e.className = "empty";
-      e.textContent = s.running
-        ? "No dev servers found in range yet."
-        : "Press Start to discover and expose your dev servers.";
-      list.appendChild(e);
+      list.append(el("div", "empty", s.running ? "No dev servers in range yet." : "Press Start to discover and share your dev servers."));
       return;
     }
-    for (const v of svcs) list.appendChild(svcRow(v));
+    for (const v of svcs) list.append(svcRow(v));
   }
 
   async function refresh() {
-    try {
-      const r = await fetch("/api/status", H);
-      render(await r.json());
-    } catch (e) {}
+    try { render(await (await fetch("/api/status", { headers: HDR })).json()); } catch (e) {}
   }
   refresh();
   setInterval(refresh, 1500);

@@ -183,6 +183,17 @@ func (c *Controller) Stop() error {
 	return err
 }
 
+// Refresh forces an immediate discovery refresh and fires OnChange. No-op if idle.
+func (c *Controller) Refresh() {
+	c.mu.Lock()
+	store := c.store
+	c.mu.Unlock()
+	if store != nil {
+		_, _, _, _ = store.refresh()
+		c.notify()
+	}
+}
+
 // Toggle starts if idle, stops if running.
 func (c *Controller) Toggle(o Options) error {
 	if c.Running() {

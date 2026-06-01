@@ -1,8 +1,6 @@
 // Command tailscale-proxy-app is a tray-first desktop wrapper around the tsp
 // engine. It drives core.Controller in-process — no sidecar — and presents a
-// webview panel (served on loopback) from the menu bar: start/stop, switch
-// Funnel/Serve, open service URLs, toggle start-at-login, and edit the shared
-// config.
+// webview panel (served on loopback) from the menu bar, plus a settings window.
 package main
 
 import (
@@ -16,11 +14,16 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
+const appName = "Tailscale Proxy"
+
+var bgColour = application.RGBA{Red: 18, Green: 20, Blue: 24, Alpha: 255}
+
 type ui struct {
-	app  *application.App
-	tray *application.SystemTray
-	win  *application.WebviewWindow
-	ctl  *core.Controller
+	app      *application.App
+	tray     *application.SystemTray
+	panel    *application.WebviewWindow
+	settings *application.WebviewWindow
+	ctl      *core.Controller
 
 	mu    sync.Mutex
 	cfg   core.Config
@@ -33,45 +36,46 @@ func main() {
 		log.Printf("config: %v (using defaults)", err)
 	}
 
+	policy := application.ActivationPolicyAccessory // tray-first: no Dock icon
+	if !loadPrefs().HideDock {
+		policy = application.ActivationPolicyRegular
+	}
 	app := application.New(application.Options{
-		Name:        "Tailscale Proxy",
+		Name:        appName,
 		Description: "Discover local dev servers and expose them through one Tailscale entry.",
-		// Tray-first: no Dock icon on macOS (menu-bar only).
-		Mac: application.MacOptions{ActivationPolicy: application.ActivationPolicyAccessory},
+		Icon:        iconRunning,
+		Mac:         application.MacOptions{ActivationPolicy: policy},
 	})
 
 	u := &ui{app: app, ctl: core.NewController(), cfg: cfg}
 	u.tray = app.SystemTray.New()
-	u.tray.SetLabel("tsp")
+	u.tray.SetTemplateIcon(iconIdle)
 
-	panelURL, err := u.startDashboard()
+	base, err := u.startDashboard()
 	if err != nil {
 		log.Fatalf("dashboard: %v", err)
 	}
-	u.win = app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Name:             "panel",
-		URL:              panelURL,
-		Width:            380,
-		Height:           560,
-		Frameless:        true,
-		DisableResize:    true,
-		AlwaysOnTop:      true,
-		Hidden:           true,
-		BackgroundColour: application.RGBA{Red: 21, Green: 23, Blue: 28, Alpha: 255},
+	u.panel = app.Window.NewWithOptions(application.WebviewWindowOptions{
+		Name: "panel", URL: base, Width: 380, Height: 600,
+		Frameless: true, DisableResize: true, AlwaysOnTop: true, Hidden: true,
+		BackgroundColour: bgColour,
 	})
-	// Click the menu-bar item to drop the panel down underneath it.
-	u.tray.AttachWindow(u.win).WindowDebounce(200 * time.Millisecond)
+	u.tray.AttachWindow(u.panel).WindowDebounce(200 * time.Millisecond)
 
-	// Keep the menu-bar label in sync; the panel polls its own status.
-	u.ctl.OnChange(func() { application.InvokeAsync(u.updateLabel) })
-	u.updateLabel()
+	u.settings = app.Window.NewWithOptions(application.WebviewWindowOptions{
+		Name: "settings", Title: appName + " Settings", URL: base + "/settings",
+		Width: 560, Height: 660, Hidden: true, BackgroundColour: bgColour,
+	})
+
+	u.ctl.OnChange(func() { application.InvokeAsync(u.updateIcon) })
+	u.updateIcon()
 
 	// Auto-start the proxy on launch (best effort; the panel reflects failures).
 	go func() {
 		if err := u.ctl.Start(u.opts()); err != nil {
 			log.Printf("auto-start: %v", err)
 		}
-		application.InvokeAsync(u.updateLabel)
+		application.InvokeAsync(u.updateIcon)
 	}()
 
 	if err := app.Run(); err != nil {
@@ -85,19 +89,21 @@ func (u *ui) opts() core.Options {
 	return core.OptionsFromConfig(u.cfg)
 }
 
-func (u *ui) updateLabel() {
+func (u *ui) updateIcon() {
 	if u.ctl.Running() {
-		u.tray.SetLabel("tsp ●")
+		u.tray.SetIcon(iconRunning)
 	} else {
-		u.tray.SetLabel("tsp")
+		u.tray.SetTemplateIcon(iconIdle)
 	}
 }
+
+func (u *ui) showSettings() { application.InvokeAsync(func() { u.settings.Show() }) }
 
 func (u *ui) toggle() {
 	if err := u.ctl.Toggle(u.opts()); err != nil {
 		log.Printf("toggle: %v", err)
 	}
-	application.InvokeAsync(u.updateLabel)
+	application.InvokeAsync(u.updateIcon)
 }
 
 func (u *ui) setPrivate(private bool) {
@@ -108,14 +114,28 @@ func (u *ui) setPrivate(private bool) {
 	if _, err := core.SaveConfig(cfg); err != nil {
 		log.Printf("save config: %v", err)
 	}
-	// Re-expose under the new mode if we're running.
+	u.restartIfRunning()
+}
+
+// applyConfig persists a new config from the settings window and re-exposes if running.
+func (u *ui) applyConfig(cfg core.Config) {
+	u.mu.Lock()
+	u.cfg = cfg
+	u.mu.Unlock()
+	if _, err := core.SaveConfig(cfg); err != nil {
+		log.Printf("save config: %v", err)
+	}
+	u.restartIfRunning()
+}
+
+func (u *ui) restartIfRunning() {
 	if u.ctl.Running() {
 		_ = u.ctl.Stop()
 		if err := u.ctl.Start(u.opts()); err != nil {
-			log.Printf("restart after mode change: %v", err)
+			log.Printf("restart: %v", err)
 		}
 	}
-	application.InvokeAsync(u.updateLabel)
+	application.InvokeAsync(u.updateIcon)
 }
 
 func (u *ui) setAutostart(on bool) {

@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Tailscale Proxy Settings</title>
+<style>
+/* Hallmark · component: settings window · genre: modern-minimal · theme: native-dark
+ * pre-emit critique: P5 H5 E5 S5 R5 V4
+ * macOS System-Settings rows · translucent hairlines · native switches · single accent
+ */
+  :root {
+    --bg: oklch(17.5% 0.008 264);
+    --raise: oklch(21.5% 0.009 264);
+    --raise-2: oklch(25.5% 0.01 264);
+    --hair: oklch(100% 0 0 / 0.07);
+    --hair-2: oklch(100% 0 0 / 0.12);
+    --fg: oklch(97% 0.004 264);
+    --fg-2: oklch(73% 0.008 264);
+    --fg-3: oklch(56% 0.008 264);
+    --accent: oklch(65% 0.155 256);
+    --accent-fg: oklch(98% 0.01 256);
+    --on: oklch(74% 0.16 152);
+
+    --r-xs: 6px; --r-sm: 8px; --r: 10px;
+    --ease: cubic-bezier(0.32, 0.72, 0, 1);
+    --dur: 150ms;
+    --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: var(--bg); color: var(--fg); font: 13px/1.45 var(--sans); -webkit-font-smoothing: antialiased; }
+  body { display: flex; flex-direction: column; min-height: 100vh; }
+  button { font: inherit; cursor: default; color: inherit; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--r-xs); }
+
+  /* Tabs */
+  .tabs { display: flex; gap: 3px; justify-content: center; padding: 14px 0 16px; }
+  .tab { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 7px 18px; border: 1px solid transparent; border-radius: var(--r); background: 0; color: var(--fg-3); font-size: 11px; font-weight: 500; transition: all var(--dur) var(--ease); }
+  .tab svg { width: 18px; height: 18px; }
+  .tab:hover { color: var(--fg-2); }
+  .tab.active { color: var(--accent); background: color-mix(in oklab, var(--accent) 12%, transparent); }
+
+  .body { flex: 1; overflow-y: auto; padding: 4px 26px 20px; }
+  .pane { display: none; }
+  .pane.active { display: block; }
+
+  /* Setting rows */
+  .group { color: var(--fg-3); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; margin: 18px 0 4px; }
+  .group:first-child { margin-top: 4px; }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 11px 0; border-bottom: 1px solid var(--hair); }
+  .row:last-child { border-bottom: 0; }
+  .lab { min-width: 0; }
+  .lab .name { font-weight: 500; }
+  .lab .hint { color: var(--fg-3); font-size: 11px; margin-top: 2px; line-height: 1.35; }
+  .ctl { flex: none; width: 190px; display: flex; justify-content: flex-end; }
+  input[type=text], input[type=number], select { width: 190px; background: var(--raise); color: var(--fg); border: 1px solid var(--hair-2); border-radius: var(--r-xs); padding: 7px 9px; font: inherit; transition: border-color var(--dur) var(--ease); }
+  input.num, select { font-variant-numeric: tabular-nums; }
+  input:focus, select:focus { outline: none; border-color: var(--accent); }
+  input::placeholder { color: var(--fg-3); }
+
+  /* Native switch */
+  .sw { width: 38px; height: 22px; border-radius: 999px; background: var(--raise-2); border: 1px solid var(--hair-2); position: relative; flex: none; transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease); }
+  .sw.on { background: var(--accent); border-color: var(--accent); }
+  .sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.35); transition: transform var(--dur) var(--ease); }
+  .sw.on::after { transform: translateX(16px); }
+
+  /* Save bar */
+  .savebar { display: flex; align-items: center; gap: 14px; padding: 12px 26px; border-top: 1px solid var(--hair); background: var(--bg); }
+  .save { background: var(--accent); color: var(--accent-fg); border: 0; border-radius: var(--r-sm); padding: 9px 20px; font-weight: 600; transition: filter var(--dur) var(--ease), transform var(--dur) var(--ease); }
+  .save:hover { filter: brightness(1.07); }
+  .save:active { transform: scale(0.98); }
+  .saved { color: var(--on); font-weight: 600; font-size: 12px; opacity: 0; transition: opacity var(--dur) var(--ease); }
+  .saved.show { opacity: 1; }
+  .spacer { flex: 1; }
+  .savebar .note { color: var(--fg-3); font-size: 11px; }
+
+  /* About */
+  .about { text-align: center; padding: 22px 0; }
+  .logo { width: 84px; height: 84px; margin: 0 auto 16px; filter: drop-shadow(0 6px 18px oklch(0% 0 0 / .35)); }
+  .about h1 { font-size: 19px; letter-spacing: -.02em; }
+  .about .ver { color: var(--fg-2); margin-top: 4px; font: 12px var(--mono); }
+  .about p { color: var(--fg-2); max-width: 360px; margin: 16px auto; line-height: 1.55; }
+  .links { display: flex; gap: 20px; justify-content: center; margin-top: 14px; }
+  .legal { color: var(--fg-3); font-size: 11px; margin-top: 26px; line-height: 1.5; }
+  .legal code { font: 11px var(--mono); color: var(--fg-2); }
+
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+  <div class="tabs">
+    <button class="tab active" data-pane="settings" onclick="tab('settings')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="8" x2="20" y2="8"/><circle cx="9" cy="8" r="2.4" fill="var(--bg)"/><line x1="4" y1="16" x2="20" y2="16"/><circle cx="15" cy="16" r="2.4" fill="var(--bg)"/></svg>
+      Settings
+    </button>
+    <button class="tab" data-pane="about" onclick="tab('about')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9.2"/><line x1="12" y1="11" x2="12" y2="16.5"/><circle cx="12" cy="7.8" r="1" fill="currentColor" stroke="none"/></svg>
+      About
+    </button>
+  </div>
+
+  <div class="body">
+    <div class="pane active" id="pane-settings">
+      <div class="group">Discovery &amp; routing</div>
+      <div class="row"><div class="lab"><div class="name">Ports</div><div class="hint">range "3000-5000" or a single "4000"</div></div><div class="ctl"><input type="text" id="ports" class="num"></div></div>
+      <div class="row"><div class="lab"><div class="name">Runtimes</div><div class="hint" id="rt-hint">empty = all known</div></div><div class="ctl"><input type="text" id="runtimes" placeholder="node,bun,python"></div></div>
+      <div class="row"><div class="lab"><div class="name">Include all listeners</div><div class="hint">discover non-web processes too</div></div><div class="ctl"><span class="sw" id="all" role="switch" tabindex="0" onclick="tog('all')"></span></div></div>
+      <div class="row"><div class="lab"><div class="name">Bind address</div><div class="hint">0.0.0.0 to reach from containers / LAN</div></div><div class="ctl"><input type="text" id="bind" class="num"></div></div>
+      <div class="row"><div class="lab"><div class="name">Proxy port</div></div><div class="ctl"><input type="number" id="port" class="num"></div></div>
+      <div class="row"><div class="lab"><div class="name">HTTPS port</div><div class="hint">Funnel allows 443 / 8443 / 10000</div></div><div class="ctl"><select id="httpsPort"><option>443</option><option>8443</option><option>10000</option></select></div></div>
+      <div class="row"><div class="lab"><div class="name">Re-scan interval</div><div class="hint">seconds between discovery scans</div></div><div class="ctl"><input type="number" id="interval" class="num"></div></div>
+      <div class="row"><div class="lab"><div class="name">De-register after</div><div class="hint">missing scans before a route is dropped</div></div><div class="ctl"><input type="number" id="deregisterCycles" class="num"></div></div>
+      <div class="row"><div class="lab"><div class="name">Forward host</div><div class="hint">send public host via X-Forwarded-Host</div></div><div class="ctl"><span class="sw" id="forwardHost" role="switch" tabindex="0" onclick="tog('forwardHost')"></span></div></div>
+      <div class="row"><div class="lab"><div class="name">MagicDNS on start</div><div class="hint">runs <code>tailscale set --accept-dns</code></div></div><div class="ctl"><select id="acceptDns"><option value="">Leave alone</option><option value="false">Disable (false)</option><option value="true">Enable (true)</option></select></div></div>
+
+      <div class="group">Application</div>
+      <div class="row"><div class="lab"><div class="name">Start at login</div><div class="hint">launch automatically on sign-in</div></div><div class="ctl"><span class="sw" id="autostart" role="switch" tabindex="0" onclick="appTog('autostart')"></span></div></div>
+      <div class="row"><div class="lab"><div class="name">Hide Dock icon</div><div class="hint">menu-bar only · applies on relaunch</div></div><div class="ctl"><span class="sw" id="hideDock" role="switch" tabindex="0" onclick="appTog('hideDock')"></span></div></div>
+    </div>
+
+    <div class="pane" id="pane-about">
+      <div class="about">
+        <svg class="logo" viewBox="0 0 88 88" fill="none">
+          <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5b8cff"/><stop offset="1" stop-color="#2f50c8"/></linearGradient></defs>
+          <rect x="3" y="3" width="82" height="82" rx="21" fill="url(#g)"/>
+          <circle cx="44" cy="44" r="19" fill="none" stroke="#fff" stroke-width="5"/>
+          <circle cx="44" cy="44" r="6.5" fill="#fff"/>
+        </svg>
+        <h1 id="name">Tailscale Proxy</h1>
+        <div class="ver" id="ver">version —</div>
+        <p>An open-source, self-hosted ngrok alternative. Discovers local dev servers by port and exposes them through one Tailscale Serve/Funnel entry, routed by project name.</p>
+        <div class="links">
+          <a href="#" onclick="open_('https://tailscaleproxy.vercel.app');return false">Documentation ↗</a>
+          <a href="#" onclick="open_('https://github.com/meabed/tailscale-proxy');return false">GitHub ↗</a>
+          <a href="#" onclick="open_('https://www.npmjs.com/package/tailscale-proxy');return false">npm ↗</a>
+        </div>
+        <div class="legal">MIT © Mohamed Meabed · shares <code>~/.tailscale-proxy/config.json</code> with the <code>tsp</code> CLI</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="savebar" id="savebar">
+    <button class="save" onclick="save()">Save changes</button>
+    <span class="saved" id="saved">Saved ✓</span>
+    <span class="spacer"></span>
+    <span class="note">App toggles apply instantly</span>
+  </div>
+
+<script>
+  const TOKEN = "__TOKEN__";
+  const HDR = { "X-TSP-Token": TOKEN };
+  const $ = (id) => document.getElementById(id);
+  const post = (p, b) => fetch(p, { method: "POST", headers: HDR, body: b ? JSON.stringify(b) : null });
+
+  function tab(n) {
+    for (const t of document.querySelectorAll(".tab")) t.classList.toggle("active", t.dataset.pane === n);
+    for (const p of document.querySelectorAll(".pane")) p.classList.toggle("active", p.id === "pane-" + n);
+    $("savebar").style.display = n === "settings" ? "flex" : "none";
+  }
+  function tog(id) { $(id).classList.toggle("on"); }
+  function appTog(id) {
+    const on = !$(id).classList.contains("on");
+    $(id).classList.toggle("on", on);
+    if (id === "autostart") post("/api/autostart", { on });
+    if (id === "hideDock") post("/api/prefs", { hideDock: on });
+  }
+  function open_(url) { post("/api/open", { url }); }
+
+  async function load() {
+    const r = await (await fetch("/api/config", { headers: HDR })).json();
+    const c = r.config;
+    $("ports").value = c.ports; $("runtimes").value = c.runtimes; $("bind").value = c.bind;
+    $("port").value = c.port; $("httpsPort").value = c.httpsPort; $("interval").value = c.interval;
+    $("deregisterCycles").value = c.deregisterCycles; $("acceptDns").value = c.acceptDns || "";
+    $("all").classList.toggle("on", !!c.all);
+    $("forwardHost").classList.toggle("on", !!c.forwardHost);
+    $("autostart").classList.toggle("on", !!r.autostart);
+    $("hideDock").classList.toggle("on", !!r.hideDock);
+    $("name").textContent = r.name || "Tailscale Proxy";
+    $("ver").textContent = "version " + (r.version || "—");
+    if (r.runtimes && r.runtimes.length) $("rt-hint").textContent = "empty = all known (" + r.runtimes.slice(0, 6).join(", ") + ", …)";
+  }
+
+  async function save() {
+    const cur = await (await fetch("/api/config", { headers: HDR })).json();
+    const cfg = {
+      ports: $("ports").value.trim() || "3000-5000",
+      all: $("all").classList.contains("on"),
+      runtimes: $("runtimes").value.trim(),
+      private: cur.config.private,           // preserved from the panel toggle
+      bind: $("bind").value.trim() || "127.0.0.1",
+      port: +$("port").value || 8443,
+      interval: +$("interval").value || 20,
+      httpsPort: +$("httpsPort").value || 443,
+      logRequests: cur.config.logRequests,
+      deregisterCycles: +$("deregisterCycles").value || 5,
+      forwardHost: $("forwardHost").classList.contains("on"),
+      acceptDns: $("acceptDns").value,
+    };
+    await post("/api/config", cfg);
+    $("saved").classList.add("show");
+    setTimeout(() => $("saved").classList.remove("show"), 1700);
+  }
+
+  load();
+</script>
+</body>
+</html>
