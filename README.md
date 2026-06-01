@@ -15,10 +15,9 @@ them, no terminal needed. <a href="https://tailscaleproxy.vercel.app/desktop"><i
 
 | Platform | Direct download |
 | --- | --- |
-| 🍎 **macOS** · Apple Silicon | **[Tailscale-Proxy-Apple-Silicon.dmg](https://github.com/meabed/tailscale-proxy/releases/latest/download/Tailscale-Proxy-Apple-Silicon.dmg)** |
-| 🍎 **macOS** · Intel | **[Tailscale-Proxy-Intel.dmg](https://github.com/meabed/tailscale-proxy/releases/latest/download/Tailscale-Proxy-Intel.dmg)** |
-| 🪟 **Windows** | **[Tailscale-Proxy-Windows.zip](https://github.com/meabed/tailscale-proxy/releases/latest/download/Tailscale-Proxy-Windows.zip)** |
-| 🐧 **Linux** | **[Tailscale-Proxy-Linux.tar.gz](https://github.com/meabed/tailscale-proxy/releases/latest/download/Tailscale-Proxy-Linux.tar.gz)** |
+| 🍎 **macOS** · Apple Silicon & Intel | **[Tailscale-Proxy-macOS.dmg](https://github.com/meabed/tailscale-proxy/releases/download/desktop-latest/Tailscale-Proxy-macOS.dmg)** |
+| 🪟 **Windows** · 64-bit | **[Tailscale-Proxy-Windows.zip](https://github.com/meabed/tailscale-proxy/releases/download/desktop-latest/Tailscale-Proxy-Windows.zip)** |
+| 🐧 **Linux** · 64-bit | **[Tailscale-Proxy-Linux.tar.gz](https://github.com/meabed/tailscale-proxy/releases/download/desktop-latest/Tailscale-Proxy-Linux.tar.gz)** |
 
 → [All releases](https://github.com/meabed/tailscale-proxy/releases) · [setup, screenshots & docs](https://tailscaleproxy.vercel.app/desktop)
 

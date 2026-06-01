@@ -23,10 +23,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: macos-latest, label: macos-arm64 }
-          - { os: macos-13, label: macos-amd64 }
-          - { os: windows-latest, label: windows-amd64 }
-          - { os: ubuntu-latest, label: linux-amd64 }
+          - { os: macos-latest, label: macos } # universal (arm64 + amd64)
+          - { os: windows-latest, label: windows }
+          - { os: ubuntu-latest, label: linux }
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -40,9 +39,10 @@ jobs:
 
       - name: Linux webview deps
         if: runner.os == 'Linux'
+        # Wails v3 uses GTK4 + WebKitGTK 6.0 on Linux.
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
+          sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev
 
       - name: Build and package
         env:
@@ -53,22 +53,25 @@ jobs:
           set -euo pipefail
           LD="-s -w -X github.com/meabed/tailscale-proxy/core.Version=${VERSION}"
           mkdir -p ../dist
-          # Stable, version-less asset names so /releases/latest/download/<name>
-          # gives a permanent direct-download link per platform.
+          # Stable, version-less asset names so releases/download/desktop-latest/<name>
+          # is a permanent direct-download link per platform.
           case "$LABEL" in
-            macos-arm64)
-              go build -trimpath -ldflags "$LD" -o tailscale-proxy .
-              bash scripts/make-macos-dmg.sh "$VERSION" tailscale-proxy "../dist/Tailscale-Proxy-Apple-Silicon.dmg"
+            macos)
+              # Native arm64; cross-build amd64 too and lipo into a universal binary
+              # (falls back to arm64-only if the amd64 cross-build fails).
+              CGO_ENABLED=1 GOARCH=arm64 go build -trimpath -ldflags "$LD" -o tsp-arm64 .
+              if CGO_ENABLED=1 GOARCH=amd64 go build -trimpath -ldflags "$LD" -o tsp-amd64 . ; then
+                lipo -create -output tailscale-proxy tsp-arm64 tsp-amd64
+              else
+                echo "amd64 cross-build failed — shipping arm64-only"; cp tsp-arm64 tailscale-proxy
+              fi
+              bash scripts/make-macos-dmg.sh "$VERSION" tailscale-proxy "../dist/Tailscale-Proxy-macOS.dmg"
               ;;
-            macos-amd64)
-              go build -trimpath -ldflags "$LD" -o tailscale-proxy .
-              bash scripts/make-macos-dmg.sh "$VERSION" tailscale-proxy "../dist/Tailscale-Proxy-Intel.dmg"
-              ;;
-            windows-amd64)
+            windows)
               go build -trimpath -ldflags "$LD -H windowsgui" -o TailscaleProxy.exe .
               7z a "../dist/Tailscale-Proxy-Windows.zip" TailscaleProxy.exe
               ;;
-            linux-amd64)
+            linux)
               go build -trimpath -ldflags "$LD" -o tailscale-proxy .
               tar czf "../dist/Tailscale-Proxy-Linux.tar.gz" tailscale-proxy
               ;;
@@ -94,23 +97,24 @@ jobs:
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: desktop-v${{ inputs.version }}
-          name: Tailscale Proxy desktop v${{ inputs.version }}
-          make_latest: true
+          # Rolling tag → permanent download URLs (releases/download/desktop-latest/<asset>)
+          # that don't collide with the CLI's own `releases/latest`.
+          tag_name: desktop-latest
+          name: Tailscale Proxy desktop ${{ inputs.version }}
+          make_latest: false
           files: dist/*
           body: |
-            **Tailscale Proxy** menu-bar app v${{ inputs.version }} — a tray UI over the `tsp` engine.
+            **Tailscale Proxy** menu-bar app ${{ inputs.version }} — a tray UI over the `tsp` engine.
 
             | Platform | Download |
             | --- | --- |
-            | macOS (Apple Silicon) | [Tailscale-Proxy-Apple-Silicon.dmg](https://github.com/meabed/tailscale-proxy/releases/latest/download/Tailscale-Proxy-Apple-Silicon.dmg) |
-            | macOS (Intel) | [Tailscale-Proxy-Intel.dmg](https://github.com/meabed/tailscale-proxy/releases/latest/download/Tailscale-Proxy-Intel.dmg) |
-            | Windows | [Tailscale-Proxy-Windows.zip](https://github.com/meabed/tailscale-proxy/releases/latest/download/Tailscale-Proxy-Windows.zip) |
-            | Linux | [Tailscale-Proxy-Linux.tar.gz](https://github.com/meabed/tailscale-proxy/releases/latest/download/Tailscale-Proxy-Linux.tar.gz) |
+            | macOS (Apple Silicon & Intel) | [Tailscale-Proxy-macOS.dmg](https://github.com/meabed/tailscale-proxy/releases/download/desktop-latest/Tailscale-Proxy-macOS.dmg) |
+            | Windows | [Tailscale-Proxy-Windows.zip](https://github.com/meabed/tailscale-proxy/releases/download/desktop-latest/Tailscale-Proxy-Windows.zip) |
+            | Linux | [Tailscale-Proxy-Linux.tar.gz](https://github.com/meabed/tailscale-proxy/releases/download/desktop-latest/Tailscale-Proxy-Linux.tar.gz) |
 
             ### Install
             - **macOS** — open the `.dmg`, drag **Tailscale Proxy** to Applications. It's unsigned, so the first launch needs: right-click the app → **Open** (or `xattr -dr com.apple.quarantine "/Applications/Tailscale Proxy.app"`). It lives in the **menu bar** (no Dock icon).
             - **Windows** — unzip and run `TailscaleProxy.exe`. SmartScreen may warn (unsigned): **More info → Run anyway**.
-            - **Linux** — `tar xzf` and run `./tailscale-proxy`. Needs GTK3 + WebKit2GTK 4.1 (`sudo apt install libgtk-3-0 libwebkit2gtk-4.1-0`).
+            - **Linux** — `tar xzf` and run `./tailscale-proxy`. Needs GTK4 + WebKitGTK 6.0 (`sudo apt install libgtk-4-1 libwebkitgtk-6.0-4`).
 
             Requires [Tailscale](https://tailscale.com/download) installed and signed in — the app shows setup steps if it isn't.
