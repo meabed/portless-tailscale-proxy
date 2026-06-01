@@ -94,6 +94,19 @@
   .open { width: 28px; height: 28px; display: grid; place-items: center; border: 1px solid var(--hair); background: 0; color: var(--fg-2); border-radius: var(--r-xs); transition: all var(--dur) var(--ease); }
   .open:hover { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
   .open:active { transform: scale(0.94); }
+  .more { width: 28px; height: 28px; display: grid; place-items: center; border: 1px solid transparent; background: 0; color: var(--fg-3); border-radius: var(--r-xs); transition: all var(--dur) var(--ease); }
+  .more:hover { background: var(--raise-2); border-color: var(--hair-2); color: var(--fg); }
+  .more:active { transform: scale(0.94); }
+
+  /* Per-service action menu */
+  .ctxmenu { position: fixed; z-index: 100; min-width: 170px; background: oklch(23% 0.01 264 / 0.97); border: 1px solid var(--hair-2); border-radius: var(--r); padding: 5px; box-shadow: 0 12px 34px oklch(0% 0 0 / 0.45); display: flex; flex-direction: column; gap: 1px; }
+  .ctxitem { display: flex; align-items: center; gap: 9px; width: 100%; text-align: left; border: 0; background: 0; color: var(--fg); border-radius: var(--r-xs); padding: 7px 9px; font-size: 12.5px; }
+  .ctxitem svg { width: 14px; height: 14px; flex: none; opacity: .8; }
+  .ctxitem:hover { background: var(--accent); color: var(--accent-fg); }
+  .ctxitem:hover svg { opacity: 1; }
+  .ctxitem.danger { color: var(--off); }
+  .ctxitem.danger:hover { background: var(--off); color: #fff; }
+  .ctxsep { height: 1px; background: var(--hair); margin: 4px 4px; }
 
   .empty { color: var(--fg-3); text-align: center; padding: 26px 16px; line-height: 1.55; font-size: 12.5px; }
   .banner { display: flex; align-items: center; gap: 8px; font-size: 11.5px; line-height: 1.4; padding: 8px 10px; margin-top: var(--s2); border-radius: var(--r-sm); }
@@ -186,6 +199,8 @@
 
 </div>
 
+<div id="ctxmenu" class="ctxmenu hidden" role="menu"></div>
+
 <script>
   const TOKEN = "__TOKEN__";
   const HDR = { "X-TSP-Token": TOKEN };
@@ -226,34 +241,93 @@
       : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v8"/><path d="M7.5 7a7 7 0 1 0 9 0"/></svg>';
   }
 
-  function metric(label, value) { const d = el("div"); d.append(el("b", null, value)); if (label) d.append(document.createTextNode(" " + label)); return d; }
+  function metric(value, label) { const d = el("div"); d.append(el("b", null, value)); if (label) d.append(document.createTextNode(" " + label)); return d; }
 
-  function svcRow(v) {
+  // Keyed row cache → update rows in place (no teardown) so the list never flickers.
+  const rows = new Map();
+
+  function makeRow(v) {
     const row = el("div", "svc");
-
-    // Identity column
+    const badge = el("span", "badge");
     const meta = el("div", "meta");
-    meta.append(el("div", "slug", v.slug));
-    const addr = el("div", "addr");
-    addr.textContent = "127.0.0.1:" + v.port + (v.pid ? "  pid " + v.pid : "");
-    meta.append(addr);
-    if (v.dir) { const d = el("div", "dir", tilde(v.dir)); d.title = v.dir; meta.append(d); }
-
-    // Metrics column (right-aligned, columns line up across rows)
-    const m = el("div", "metrics");
-    if (v.cpu || v.memMB) { m.append(metric("cpu", (v.cpu || 0).toFixed(1) + "%")); m.append(metric("MB", v.memMB + "")); }
-    if (v.uptime) m.append(metric("", v.uptime));
-    else if (v.discoveredAt) m.append(metric("ago", ago(v.discoveredAt)));
-
-    row.append(el("span", "badge", v.runtime || "?"), meta, m);
-    if (v.url) {
-      const btn = el("button", "open"); btn.title = "Open " + v.url;
-      btn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M9 7h8v8"/></svg>';
-      btn.addEventListener("click", () => open_(v.url));
-      row.append(btn);
-    }
-    return row;
+    const slug = el("div", "slug"), addr = el("div", "addr"), dir = el("div", "dir");
+    meta.append(slug, addr, dir);
+    const metrics = el("div", "metrics");
+    const more = el("button", "more"); more.title = "Actions"; more.setAttribute("aria-label", "Actions");
+    more.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg>';
+    const r = { row, badge, slug, addr, dir, metrics, more, v };
+    more.addEventListener("click", (e) => { e.stopPropagation(); openMenu(more, r.v); });
+    row.append(badge, meta, metrics, more);
+    return r;
   }
+
+  function updateRow(r, v) {
+    r.v = v;
+    r.badge.textContent = v.runtime || "?";
+    r.slug.textContent = v.slug;
+    r.addr.textContent = "127.0.0.1:" + v.port + (v.pid ? "  pid " + v.pid : "");
+    if (v.dir) { r.dir.textContent = tilde(v.dir); r.dir.title = v.dir; r.dir.style.display = ""; } else r.dir.style.display = "none";
+    r.metrics.textContent = "";
+    if (v.cpu || v.memMB) { r.metrics.append(metric((v.cpu || 0).toFixed(1) + "%", "cpu"), metric(v.memMB + "", "MB")); }
+    if (v.uptime) r.metrics.append(metric(v.uptime, ""));
+    else if (v.discoveredAt) r.metrics.append(metric(ago(v.discoveredAt), "ago"));
+  }
+
+  function renderList(svcs, running) {
+    const list = $("list");
+    if (!svcs.length) {
+      rows.clear();
+      list.textContent = "";
+      list.append(el("div", "empty", running ? "No dev servers in range yet." : "Press Start to discover and share your dev servers."));
+      return;
+    }
+    const empty = list.querySelector(".empty"); if (empty) empty.remove();
+    const seen = new Set();
+    for (const v of svcs) {
+      seen.add(v.slug);
+      let r = rows.get(v.slug);
+      if (!r) { r = makeRow(v); rows.set(v.slug, r); }
+      updateRow(r, v);
+      list.append(r.row); // re-append moves the existing node, preserving order without flicker
+    }
+    for (const [slug, r] of rows) if (!seen.has(slug)) { r.row.remove(); rows.delete(slug); }
+  }
+
+  // ── Per-service action menu ───────────────────────────────────────────────
+  const ICON = {
+    open: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M9 7h8v8"/></svg>',
+    copy: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg>',
+    folder: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>',
+    info: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>',
+    kill: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v8"/><path d="M7.5 7a7 7 0 1 0 9 0"/></svg>',
+  };
+  function menuItem(icon, label, fn, danger) {
+    const it = el("button", "ctxitem" + (danger ? " danger" : ""));
+    it.innerHTML = icon; it.append(el("span", null, label));
+    it.addEventListener("click", () => { closeMenu(); fn(); });
+    return it;
+  }
+  function infoText(v) {
+    return [v.slug, "URL: " + (v.url || "—"), "Address: 127.0.0.1:" + v.port, "PID: " + (v.pid || "—"), "Folder: " + (v.dir || "—")].join("\n");
+  }
+  function openMenu(btn, v) {
+    const m = $("ctxmenu");
+    m.textContent = "";
+    if (v.url) m.append(menuItem(ICON.open, "Open URL", () => open_(v.url)));
+    if (v.url) m.append(menuItem(ICON.copy, "Copy URL", () => api("/api/copy", { text: v.url })));
+    if (v.dir) m.append(menuItem(ICON.folder, "Open folder", () => api("/api/openfolder", { path: v.dir })));
+    m.append(menuItem(ICON.info, "Copy info", () => api("/api/copy", { text: infoText(v) })));
+    if (v.pid) { m.append(el("div", "ctxsep")); m.append(menuItem(ICON.kill, "Kill process", () => api("/api/kill", { pid: v.pid }), true)); }
+    m.classList.remove("hidden");
+    m.style.visibility = "hidden";
+    const rb = btn.getBoundingClientRect(), mw = m.offsetWidth, mh = m.offsetHeight;
+    let top = rb.bottom + 4; if (top + mh > innerHeight - 6) top = Math.max(6, rb.top - mh - 4);
+    let left = rb.right - mw; if (left < 6) left = 6;
+    m.style.top = top + "px"; m.style.left = left + "px"; m.style.visibility = "";
+  }
+  function closeMenu() { $("ctxmenu").classList.add("hidden"); }
+  function menuOpen() { return !$("ctxmenu").classList.contains("hidden"); }
+  document.addEventListener("click", (e) => { if (!e.target.closest("#ctxmenu")) closeMenu(); });
 
   function render(s) {
     const ts = s.tailscale || {};
@@ -286,13 +360,7 @@
 
     const svcs = s.services || [];
     $("count").textContent = svcs.length;
-    const list = $("list");
-    list.textContent = "";
-    if (!svcs.length) {
-      list.append(el("div", "empty", s.running ? "No dev servers in range yet." : "Press Start to discover and share your dev servers."));
-      return;
-    }
-    for (const v of svcs) list.append(svcRow(v));
+    renderList(svcs, s.running);
   }
 
   async function refresh() {
@@ -301,8 +369,15 @@
   refresh();
   setInterval(refresh, 1500);
 
-  // Esc dismisses the panel.
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape") fetch("/api/hidepanel", { method: "POST", headers: HDR }).catch(() => {}); });
+  // Disable the native right-click menu (Look Up / Inspect / Translate …).
+  document.addEventListener("contextmenu", (e) => e.preventDefault());
+
+  // Esc closes the action menu if open, otherwise dismisses the panel.
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    if (menuOpen()) { closeMenu(); return; }
+    fetch("/api/hidepanel", { method: "POST", headers: HDR }).catch(() => {});
+  });
 </script>
 </body>
 </html>

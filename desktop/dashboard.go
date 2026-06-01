@@ -87,6 +87,29 @@ func (u *ui) status() statusJSON {
 	return out
 }
 
+// serviceHasPID / serviceHasDir gate the destructive/open actions to processes
+// and folders that actually belong to a currently-discovered service.
+func (u *ui) serviceHasPID(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	for _, s := range u.ctl.Status().Services {
+		if s.PID == pid {
+			return true
+		}
+	}
+	return false
+}
+
+func (u *ui) serviceHasDir(dir string) bool {
+	for _, s := range u.ctl.Status().Services {
+		if s.Dir != "" && s.Dir == dir {
+			return true
+		}
+	}
+	return false
+}
+
 // cachedHealth probes tailscale at most every 4s.
 func (u *ui) cachedHealth() core.TailscaleHealth {
 	u.dmu.Lock()
@@ -246,6 +269,39 @@ func (u *ui) startDashboard() (string, error) {
 	mux.HandleFunc("/api/openconfig", auth(func(w http.ResponseWriter, r *http.Request) {
 		if p, err := core.ConfigPath(); err == nil {
 			openExternal(p)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	mux.HandleFunc("/api/openfolder", auth(func(w http.ResponseWriter, r *http.Request) {
+		var b struct {
+			Path string `json:"path"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&b)
+		// Only open a folder that belongs to a currently-discovered service.
+		if b.Path != "" && u.serviceHasDir(b.Path) {
+			openExternal(b.Path)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	mux.HandleFunc("/api/copy", auth(func(w http.ResponseWriter, r *http.Request) {
+		var b struct {
+			Text string `json:"text"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&b)
+		if b.Text != "" {
+			_ = copyToClipboard(b.Text)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	mux.HandleFunc("/api/kill", auth(func(w http.ResponseWriter, r *http.Request) {
+		var b struct {
+			PID int `json:"pid"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&b)
+		// Only kill a pid that belongs to a currently-discovered service.
+		if u.serviceHasPID(b.PID) {
+			_ = killPID(b.PID)
+			u.ctl.Refresh()
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}))

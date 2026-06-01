@@ -3,10 +3,10 @@
 package main
 
 import (
+	"fmt"
 	"os/exec"
 	"strconv"
 	"strings"
-	"time"
 )
 
 type procStat struct {
@@ -47,7 +47,7 @@ func procStats(pids []int) map[int]procStat {
 	return out
 }
 
-// humanEtime turns ps etime ([[dd-]hh:]mm:ss) into a compact "3d2h" / "2h13m" / "5m12s".
+// humanEtime turns ps etime ([[dd-]hh:]mm:ss) into "HH:MM" (or "Nd HH:MM").
 func humanEtime(s string) string {
 	days := 0
 	if i := strings.IndexByte(s, '-'); i >= 0 {
@@ -55,27 +55,19 @@ func humanEtime(s string) string {
 		s = s[i+1:]
 	}
 	parts := strings.Split(s, ":")
-	var h, m, sec int
+	var h, m int
 	switch len(parts) {
 	case 3:
 		h, _ = strconv.Atoi(parts[0])
 		m, _ = strconv.Atoi(parts[1])
-		sec, _ = strconv.Atoi(parts[2])
 	case 2:
 		m, _ = strconv.Atoi(parts[0])
-		sec, _ = strconv.Atoi(parts[1])
 	default:
 		return s
 	}
-	d := time.Duration(days)*24*time.Hour + time.Duration(h)*time.Hour + time.Duration(m)*time.Minute + time.Duration(sec)*time.Second
-	switch {
-	case d >= 24*time.Hour:
-		return strconv.Itoa(days+h/24) + "d" + strconv.Itoa(h%24) + "h"
-	case d >= time.Hour:
-		return strconv.Itoa(h) + "h" + strconv.Itoa(m) + "m"
-	case d >= time.Minute:
-		return strconv.Itoa(m) + "m"
-	default:
-		return strconv.Itoa(sec) + "s"
+	hm := fmt.Sprintf("%02d:%02d", h, m)
+	if days > 0 {
+		return fmt.Sprintf("%dd %s", days, hm)
 	}
+	return hm
 }
