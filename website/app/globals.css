@@ -272,6 +272,19 @@ a:hover { text-decoration: underline; text-underline-offset: 2px; }
 }
 .tsp-content hr { border: none; border-top: 1px solid var(--border); margin: var(--space-xl) 0; }
 
+/* ── Desktop download page ─────────────────────────────────────────────── */
+.dl-hero { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 0.5rem; padding: 0.5rem 0 0.25rem; }
+.dl-hero img { width: 92px; height: 92px; filter: drop-shadow(0 10px 28px oklch(54% 0.17 256 / 0.35)); }
+.dl-hero .dl-tag { color: var(--muted); max-width: 30rem; margin: 0; }
+.dl-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.6rem; margin: var(--space-lg) 0; }
+.dl-btn { display: flex; align-items: center; gap: 0.7rem; padding: 0.8rem 1rem; border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--paper-2); color: var(--fg-strong); transition: border-color 0.15s var(--ease-out), background-color 0.15s var(--ease-out), transform 0.15s var(--ease-out); }
+.dl-btn:hover { text-decoration: none; border-color: var(--accent); background: var(--paper-3); transform: translateY(-1px); }
+.dl-btn svg { width: 22px; height: 22px; flex: none; color: var(--fg-strong); }
+.dl-btn b { font-weight: 600; letter-spacing: -0.01em; }
+.dl-btn span { display: block; color: var(--muted); font-size: 0.8rem; }
+.dl-shot { width: 100%; max-width: 360px; display: block; margin: var(--space-lg) auto; border-radius: 14px; border: 1px solid var(--border); box-shadow: var(--shadow); }
+@media (max-width: 560px) { .dl-grid { grid-template-columns: 1fr; } }
+
 .tsp-footer {
   max-width: var(--measure);
   margin-top: var(--space-xl);

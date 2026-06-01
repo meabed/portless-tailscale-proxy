@@ -5,6 +5,9 @@ A tray-first desktop wrapper around the `tsp` engine. It drives
 bar can start/stop the proxy, switch Funnel/Serve, open service URLs, toggle
 start-at-login, and edit the shared `~/.tailscale-proxy/config.json`.
 
+> **Download a build:** [Releases](https://github.com/meabed/tailscale-proxy/releases)
+> (newest `desktop-v…`) · [docs page](https://tailscaleproxy.vercel.app/desktop).
+
 Built with [Wails v3](https://v3alpha.wails.io) (Go + native webview). Separate Go
 module so the CLI module stays dependency-free; it imports `core` via a local
 `replace` directive.
@@ -47,17 +50,20 @@ go build -o tsp-app .   # builds a native binary (CGO links the system webview)
 `go run .` works too. The proxy needs Tailscale set up exactly like the CLI — run
 `tsp doctor` (or the CLI) first if the menu shows it stopped with an error.
 
-## Package it (.app / .dmg / .msi / .deb)
+## Release builds
 
-For a signed, bundled app, use the Wails v3 toolchain:
+Installers are produced by the **`desktop-release`** GitHub workflow
+([`.github/workflows/desktop-release.yml`](../.github/workflows/desktop-release.yml)).
+Run it from the Actions tab with a version (e.g. `0.1.0`); it builds on macOS
+(arm64 + Intel), Windows, and Linux runners, packages each
+(`make-macos-dmg.sh` → `.dmg`, windowsgui `.exe` → `.zip`, Linux `.tar.gz`), and
+publishes a `desktop-v<version>` GitHub release.
 
-```bash
-go install github.com/wailsapp/wails/v3/cmd/wails3@latest
-wails3 build            # see https://v3alpha.wails.io for packaging + signing
-```
+Locally on one platform you can also `go build` (above) or use the Wails toolchain
+(`go install github.com/wailsapp/wails/v3/cmd/wails3@latest && wails3 build`).
 
-Packaging config (icons, bundle identifier, signing, notarization) and CI wiring
-are the next step — see the repo's `AGENT.md` for status.
+Builds are currently **unsigned** — code-signing + notarization (macOS) and an
+Authenticode cert (Windows) are the next step.
 
 ## Layout
 

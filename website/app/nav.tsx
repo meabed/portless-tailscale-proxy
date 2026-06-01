@@ -7,6 +7,7 @@ export const pages = [
   { href: "/", label: "Introduction" },
   { href: "/installation", label: "Installation" },
   { href: "/getting-started", label: "Getting started" },
+  { href: "/desktop", label: "Desktop app" },
   { href: "/usage", label: "Usage & commands" },
   { href: "/configuration", label: "Configuration" },
   { href: "/how-it-works", label: "How it works" },

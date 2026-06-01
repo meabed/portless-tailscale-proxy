@@ -100,17 +100,24 @@ Supported: **macOS, Linux, Windows, WSL** (amd64 + arm64).
 Update later with **`tsp update`** — it self-updates a standalone binary, or prints
 `brew upgrade tsp` / `npm i -g tailscale-proxy@latest` for managed installs.
 
-### Desktop app (menu bar / tray)
+---
 
-Prefer clicking to typing? There's a tray-first desktop app (Wails) that drives the
-same engine in-process — start/stop, switch Funnel/Serve, open service URLs, and
-**start at login** — sharing the same `~/.tailscale-proxy/config.json` as the CLI.
+## Desktop app
 
-```bash
-cd desktop && go build -o tsp-app . && ./tsp-app
-```
+<img src="website/public/app-icon.svg" align="right" width="96" alt="Tailscale Proxy app icon" />
 
-Build/packaging details: [`desktop/README.md`](desktop/README.md).
+Prefer clicking to typing? There's a native **menu-bar app** for **macOS, Windows,
+and Linux** — start/stop the proxy, watch each dev server (cpu · memory · uptime),
+switch Funnel/Serve, and open/copy/kill services, all without a terminal. It runs
+the same engine as the CLI and shares the same `~/.tailscale-proxy/config.json`.
+
+**[⬇ Download](https://github.com/meabed/tailscale-proxy/releases)** — pick the
+latest **`desktop-v…`** release · **[Docs & screenshots](https://tailscaleproxy.vercel.app/desktop)**
+
+<img src="website/public/desktop-panel.png" width="330" alt="Tailscale Proxy menu-bar panel" />
+
+Build from source: `cd desktop && go build -o tsp-app . && ./tsp-app` (see
+[`desktop/README.md`](desktop/README.md)).
 
 ---
 
