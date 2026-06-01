@@ -29,9 +29,10 @@ type ui struct {
 	settings *application.WebviewWindow
 	ctl      *core.Controller
 
-	mu    sync.Mutex
-	cfg   core.Config
-	token string
+	mu          sync.Mutex
+	cfg         core.Config
+	token       string
+	settingsURL string
 
 	dmu      sync.Mutex // guards the status caches below
 	seen     map[string]time.Time
@@ -76,15 +77,9 @@ func main() {
 	// Dismiss the panel when the user clicks away from it.
 	u.panel.OnWindowEvent(events.Common.WindowLostFocus, func(*application.WindowEvent) { u.hidePanel() })
 
-	u.settings = app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Name: "settings", Title: appName + " Settings", URL: base + "/settings",
-		Width: 560, Height: 660, Hidden: true, BackgroundColour: bgColour,
-	})
-	// Hide (not destroy) on close so it can be reopened.
-	u.settings.OnWindowEvent(events.Common.WindowClosing, func(e *application.WindowEvent) {
-		e.Cancel()
-		u.settings.Hide()
-	})
+	// The settings window is created on demand (see showSettings) so it always
+	// reopens cleanly after the user closes it.
+	u.settingsURL = base + "/settings"
 
 	u.ctl.OnChange(func() { application.InvokeAsync(u.updateIcon) })
 	u.updateIcon()
@@ -116,7 +111,24 @@ func (u *ui) updateIcon() {
 	}
 }
 
-func (u *ui) showSettings() { application.InvokeAsync(func() { u.settings.Show() }) }
+// showSettings opens the settings window, (re)creating it if it was closed.
+// Closing the window destroys it in Wails, so we clear the reference on close and
+// build a fresh one next time — this is what makes "open → close → open" reliable.
+func (u *ui) showSettings() {
+	application.InvokeAsync(func() {
+		if u.settings == nil {
+			u.settings = u.app.Window.NewWithOptions(application.WebviewWindowOptions{
+				Name: "settings", Title: appName + " Settings", URL: u.settingsURL,
+				Width: 560, Height: 660, Hidden: true, BackgroundColour: bgColour,
+			})
+			u.settings.OnWindowEvent(events.Common.WindowClosing, func(*application.WindowEvent) {
+				u.settings = nil
+			})
+		}
+		u.settings.Show()
+		u.settings.Focus()
+	})
+}
 
 func (u *ui) hidePanel() { application.InvokeAsync(func() { u.panel.Hide() }) }
 
