@@ -5,19 +5,31 @@
 [![npm](https://img.shields.io/npm/v/tailscale-proxy)](https://www.npmjs.com/package/tailscale-proxy)
 [![docs](https://img.shields.io/badge/docs-tailscaleproxy.vercel.app-blue)](https://tailscaleproxy.vercel.app)
 
-## ⚡ Start in one command
+Self-hosted **[ngrok](https://ngrok.com) alternative** on [Tailscale](https://tailscale.com) —
+share all your local dev servers through one stable `*.ts.net` URL, routed by project name.
+
+## ⬇️ Download the desktop app
+
+A native **menu-bar app** — start/stop the proxy, watch your dev servers, and share
+them, no terminal needed. <a href="https://tailscaleproxy.vercel.app/desktop"><img src="website/public/app-icon.svg" align="right" width="84" alt="app icon" /></a>
+
+| Platform | Direct download |
+| --- | --- |
+| 🍎 **macOS** · Apple Silicon | **[Tailscale-Proxy-Apple-Silicon.dmg](https://github.com/meabed/tailscale-proxy/releases/latest/download/Tailscale-Proxy-Apple-Silicon.dmg)** |
+| 🍎 **macOS** · Intel | **[Tailscale-Proxy-Intel.dmg](https://github.com/meabed/tailscale-proxy/releases/latest/download/Tailscale-Proxy-Intel.dmg)** |
+| 🪟 **Windows** | **[Tailscale-Proxy-Windows.zip](https://github.com/meabed/tailscale-proxy/releases/latest/download/Tailscale-Proxy-Windows.zip)** |
+| 🐧 **Linux** | **[Tailscale-Proxy-Linux.tar.gz](https://github.com/meabed/tailscale-proxy/releases/latest/download/Tailscale-Proxy-Linux.tar.gz)** |
+
+→ [All releases](https://github.com/meabed/tailscale-proxy/releases) · [setup, screenshots & docs](https://tailscaleproxy.vercel.app/desktop)
+
+## ⚡ Or one command in the terminal
 
 ```bash
-npx tailscale-proxy
+npx tailscale-proxy                   # discovers your dev servers + shares them via Tailscale
+brew install meabed/tap/tsp && tsp    # or install the binary
 ```
 
-That's it — no install, no config. It discovers your running dev servers and shares
-them all through one Tailscale URL. (First time? Run `npx tailscale-proxy doctor` to
-check Tailscale is set up — see [Requirements](#requirements).)
-
-```bash
-brew install meabed/tap/tsp && tsp     # or install the binary, then run `tsp`
-```
+First time? `npx tailscale-proxy doctor` checks your setup — see [Requirements](#requirements).
 
 ---
 
@@ -104,20 +116,17 @@ Update later with **`tsp update`** — it self-updates a standalone binary, or p
 
 ## Desktop app
 
-<img src="website/public/app-icon.svg" align="right" width="96" alt="Tailscale Proxy app icon" />
+<img src="website/public/desktop-panel.png" align="right" width="300" alt="Tailscale Proxy menu-bar panel" />
 
-Prefer clicking to typing? There's a native **menu-bar app** for **macOS, Windows,
-and Linux** — start/stop the proxy, watch each dev server (cpu · memory · uptime),
-switch Funnel/Serve, and open/copy/kill services, all without a terminal. It runs
-the same engine as the CLI and shares the same `~/.tailscale-proxy/config.json`.
+The [menu-bar app](#️-download-the-desktop-app) (download links above) runs the same
+engine as the CLI and shares the same `~/.tailscale-proxy/config.json`. Each service
+shows its runtime, port, **cpu · memory · uptime**, and a `⋯` menu (open local/proxy
+URL, open folder, copy info, kill). Settings window for the full config + start-at-login.
 
-**[⬇ Download](https://github.com/meabed/tailscale-proxy/releases)** — pick the
-latest **`desktop-v…`** release · **[Docs & screenshots](https://tailscaleproxy.vercel.app/desktop)**
+**[Docs, screenshots & install steps →](https://tailscaleproxy.vercel.app/desktop)**
 
-<img src="website/public/desktop-panel.png" width="330" alt="Tailscale Proxy menu-bar panel" />
-
-Build from source: `cd desktop && go build -o tsp-app . && ./tsp-app` (see
-[`desktop/README.md`](desktop/README.md)).
+Build from source: `cd desktop && go build -o tsp-app . && ./tsp-app`
+(see [`desktop/README.md`](desktop/README.md)).
 
 ---
 

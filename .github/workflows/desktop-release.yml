@@ -53,19 +53,24 @@ jobs:
           set -euo pipefail
           LD="-s -w -X github.com/meabed/tailscale-proxy/core.Version=${VERSION}"
           mkdir -p ../dist
+          # Stable, version-less asset names so /releases/latest/download/<name>
+          # gives a permanent direct-download link per platform.
           case "$LABEL" in
-            macos-*)
+            macos-arm64)
               go build -trimpath -ldflags "$LD" -o tailscale-proxy .
-              bash scripts/make-macos-dmg.sh "$VERSION" tailscale-proxy \
-                "../dist/TailscaleProxy-${VERSION}-${LABEL}.dmg"
+              bash scripts/make-macos-dmg.sh "$VERSION" tailscale-proxy "../dist/Tailscale-Proxy-Apple-Silicon.dmg"
               ;;
-            windows-*)
+            macos-amd64)
+              go build -trimpath -ldflags "$LD" -o tailscale-proxy .
+              bash scripts/make-macos-dmg.sh "$VERSION" tailscale-proxy "../dist/Tailscale-Proxy-Intel.dmg"
+              ;;
+            windows-amd64)
               go build -trimpath -ldflags "$LD -H windowsgui" -o TailscaleProxy.exe .
-              7z a "../dist/TailscaleProxy-${VERSION}-${LABEL}.zip" TailscaleProxy.exe
+              7z a "../dist/Tailscale-Proxy-Windows.zip" TailscaleProxy.exe
               ;;
-            linux-*)
+            linux-amd64)
               go build -trimpath -ldflags "$LD" -o tailscale-proxy .
-              tar czf "../dist/TailscaleProxy-${VERSION}-${LABEL}.tar.gz" tailscale-proxy
+              tar czf "../dist/Tailscale-Proxy-Linux.tar.gz" tailscale-proxy
               ;;
           esac
           ls -la ../dist
@@ -91,16 +96,17 @@ jobs:
         with:
           tag_name: desktop-v${{ inputs.version }}
           name: Tailscale Proxy desktop v${{ inputs.version }}
+          make_latest: true
           files: dist/*
           body: |
             **Tailscale Proxy** menu-bar app v${{ inputs.version }} — a tray UI over the `tsp` engine.
 
             | Platform | Download |
             | --- | --- |
-            | macOS (Apple Silicon) | `TailscaleProxy-${{ inputs.version }}-macos-arm64.dmg` |
-            | macOS (Intel) | `TailscaleProxy-${{ inputs.version }}-macos-amd64.dmg` |
-            | Windows | `TailscaleProxy-${{ inputs.version }}-windows-amd64.zip` |
-            | Linux | `TailscaleProxy-${{ inputs.version }}-linux-amd64.tar.gz` |
+            | macOS (Apple Silicon) | [Tailscale-Proxy-Apple-Silicon.dmg](https://github.com/meabed/tailscale-proxy/releases/latest/download/Tailscale-Proxy-Apple-Silicon.dmg) |
+            | macOS (Intel) | [Tailscale-Proxy-Intel.dmg](https://github.com/meabed/tailscale-proxy/releases/latest/download/Tailscale-Proxy-Intel.dmg) |
+            | Windows | [Tailscale-Proxy-Windows.zip](https://github.com/meabed/tailscale-proxy/releases/latest/download/Tailscale-Proxy-Windows.zip) |
+            | Linux | [Tailscale-Proxy-Linux.tar.gz](https://github.com/meabed/tailscale-proxy/releases/latest/download/Tailscale-Proxy-Linux.tar.gz) |
 
             ### Install
             - **macOS** — open the `.dmg`, drag **Tailscale Proxy** to Applications. It's unsigned, so the first launch needs: right-click the app → **Open** (or `xattr -dr com.apple.quarantine "/Applications/Tailscale Proxy.app"`). It lives in the **menu bar** (no Dock icon).
