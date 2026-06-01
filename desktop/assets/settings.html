@@ -84,6 +84,15 @@
   .about .ver { color: var(--fg-2); margin-top: 4px; font: 12px var(--mono); }
   .about p { color: var(--fg-2); max-width: 360px; margin: 16px auto; line-height: 1.55; }
   .links { display: flex; gap: 20px; justify-content: center; margin-top: 14px; }
+  .about-actions { display: flex; gap: 8px; justify-content: center; margin-top: 18px; }
+  .about-btn { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--hair-2); background: var(--raise); color: var(--fg); border-radius: var(--r-sm); padding: 8px 14px; font-weight: 550; font-size: 12.5px; cursor: pointer; transition: all var(--dur) var(--ease); }
+  .about-btn svg { width: 14px; height: 14px; opacity: .85; }
+  .about-btn:hover { background: var(--raise-2); border-color: var(--accent); }
+  .about-btn:active { transform: scale(0.97); }
+  .about-btn[disabled] { opacity: .6; cursor: default; }
+  .upd { margin-top: 14px; min-height: 18px; font-size: 12px; color: var(--fg-2); }
+  .upd a { font-weight: 600; }
+  .upd .ok2 { color: var(--on); font-weight: 600; }
   .legal { color: var(--fg-3); font-size: 11px; margin-top: 26px; line-height: 1.5; }
   .legal code { font: 11px var(--mono); color: var(--fg-2); }
 
@@ -124,10 +133,14 @@
     <div class="pane" id="pane-about">
       <div class="about">
         <svg class="logo" viewBox="0 0 88 88" fill="none">
-          <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5b8cff"/><stop offset="1" stop-color="#2f50c8"/></linearGradient></defs>
-          <rect x="3" y="3" width="82" height="82" rx="21" fill="url(#g)"/>
-          <circle cx="44" cy="44" r="19" fill="none" stroke="#fff" stroke-width="5"/>
-          <circle cx="44" cy="44" r="6.5" fill="#fff"/>
+          <defs><linearGradient id="g" x1="14" y1="10" x2="74" y2="78" gradientUnits="userSpaceOnUse"><stop stop-color="#6E9BFF"/><stop offset="0.55" stop-color="#3E63DD"/><stop offset="1" stop-color="#2A47C0"/></linearGradient></defs>
+          <rect x="3" y="3" width="82" height="82" rx="22" fill="url(#g)"/>
+          <g stroke="#fff" stroke-width="3.8" stroke-linecap="round">
+            <path d="M33 44 L58 29"/><path d="M33 44 L61 44"/><path d="M33 44 L58 59"/>
+          </g>
+          <g fill="#fff">
+            <circle cx="33" cy="44" r="6.6"/><circle cx="59" cy="29" r="4.4"/><circle cx="61" cy="44" r="4.4"/><circle cx="59" cy="59" r="4.4"/>
+          </g>
         </svg>
         <h1 id="name">Tailscale Proxy</h1>
         <div class="ver" id="ver">version —</div>
@@ -137,6 +150,17 @@
           <a href="#" onclick="open_('https://github.com/meabed/tailscale-proxy');return false">GitHub ↗</a>
           <a href="#" onclick="open_('https://www.npmjs.com/package/tailscale-proxy');return false">npm ↗</a>
         </div>
+        <div class="about-actions">
+          <button class="about-btn" onclick="open_('https://github.com/meabed/tailscale-proxy/issues/new')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><circle cx="12" cy="12" r="9"/></svg>
+            Report an issue
+          </button>
+          <button class="about-btn" id="updBtn" onclick="checkUpdate()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6"/></svg>
+            Check for updates
+          </button>
+        </div>
+        <div class="upd" id="upd"></div>
         <div class="legal">MIT © Mohamed Meabed · shares <code>~/.tailscale-proxy/config.json</code> with the <code>tsp</code> CLI</div>
       </div>
     </div>
@@ -168,6 +192,33 @@
     if (id === "hideDock") post("/api/prefs", { hideDock: on });
   }
   function open_(url) { post("/api/open", { url }); }
+  const RELEASES = "https://github.com/meabed/tailscale-proxy/releases";
+
+  function relLink(label) {
+    const a = document.createElement("a");
+    a.href = "#"; a.textContent = label;
+    a.addEventListener("click", (e) => { e.preventDefault(); open_(RELEASES); });
+    return a;
+  }
+  async function checkUpdate() {
+    const el = $("upd"), btn = $("updBtn");
+    btn.disabled = true; el.textContent = "Checking…";
+    try {
+      const u = await (await fetch("/api/checkupdate", { headers: HDR })).json();
+      el.textContent = "";
+      if (u.err) {
+        el.textContent = "Couldn't check for updates.";
+      } else if (u.hasUpdate) {
+        el.append(document.createTextNode("Update available: "));
+        const b = document.createElement("b"); b.textContent = u.latest; el.append(b, document.createTextNode(" · "), relLink("Download ↗"));
+      } else if (u.current === "dev") {
+        el.append(document.createTextNode("Development build · latest release " + (u.latest || "—") + " · "), relLink("Releases ↗"));
+      } else {
+        const s = document.createElement("span"); s.className = "ok2"; s.textContent = "You're on the latest version (" + u.current + ")"; el.append(s);
+      }
+    } catch (e) { el.textContent = "Couldn't check for updates."; }
+    btn.disabled = false;
+  }
 
   async function load() {
     const r = await (await fetch("/api/config", { headers: HDR })).json();
