@@ -100,6 +100,18 @@ Supported: **macOS, Linux, Windows, WSL** (amd64 + arm64).
 Update later with **`tsp update`** — it self-updates a standalone binary, or prints
 `brew upgrade tsp` / `npm i -g tailscale-proxy@latest` for managed installs.
 
+### Desktop app (menu bar / tray)
+
+Prefer clicking to typing? There's a tray-first desktop app (Wails) that drives the
+same engine in-process — start/stop, switch Funnel/Serve, open service URLs, and
+**start at login** — sharing the same `~/.tailscale-proxy/config.json` as the CLI.
+
+```bash
+cd desktop && go build -o tsp-app . && ./tsp-app
+```
+
+Build/packaging details: [`desktop/README.md`](desktop/README.md).
+
 ---
 
 ## Commands

@@ -272,6 +272,9 @@ func LoadConfig() (Config, string, bool, error) { return loadConfig() }
 // SaveConfig persists cfg to the default path and returns the path written.
 func SaveConfig(c Config) (string, error) { return saveConfig(c) }
 
+// ConfigPath returns the config file path (~/.tailscale-proxy/config.json).
+func ConfigPath() (string, error) { return configPath() }
+
 // DefaultConfig returns the built-in defaults.
 func DefaultConfig() Config { return defaultConfig() }
 
