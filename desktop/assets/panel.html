@@ -1,0 +1,430 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Tailscale Proxy</title>
+<style>
+/* Hallmark · component: menu-bar panel · genre: modern-minimal · theme: native-dark
+ * pre-emit critique: P5 H5 E5 S5 R4 V5
+ * translucent rounded shell · single accent · mono numerals · tactile states
+ */
+  :root {
+    --shell: oklch(18% 0.008 264 / 0.85);
+    --bg: oklch(17.5% 0.008 264);
+    --raise: oklch(22% 0.009 264 / 0.7);
+    --raise-2: oklch(27% 0.01 264 / 0.85);
+    --hair: oklch(100% 0 0 / 0.07);
+    --hair-2: oklch(100% 0 0 / 0.13);
+    --fg: oklch(97% 0.004 264);
+    --fg-2: oklch(74% 0.008 264);
+    --fg-3: oklch(57% 0.008 264);
+    --accent: oklch(66% 0.155 256);
+    --accent-fg: oklch(98% 0.01 256);
+    --on: oklch(75% 0.16 152);
+    --off: oklch(67% 0.17 24);
+    --amber: oklch(80% 0.13 80);
+    --r-xs: 6px; --r-sm: 8px; --r: 10px;
+    --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px;
+    --ease: cubic-bezier(0.32, 0.72, 0, 1);
+    --dur: 150ms;
+    --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: transparent; color: var(--fg); font: 13px/1.45 var(--sans); -webkit-font-smoothing: antialiased; user-select: none; }
+  .shell { min-height: 100vh; background: var(--shell); border: 1px solid var(--hair-2); border-radius: 14px; padding: var(--s3); overflow: hidden; }
+  button { font: inherit; cursor: pointer; color: inherit; }
+  button[disabled] { cursor: default; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--r-xs); }
+  .num { font-variant-numeric: tabular-nums; }
+  svg { display: block; }
+
+  /* Header */
+  .head { display: flex; align-items: baseline; gap: var(--s2); padding: 2px 2px var(--s3); }
+  .state { display: flex; align-items: center; gap: 7px; font-weight: 600; letter-spacing: -.012em; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--fg-3); transition: background var(--dur) var(--ease), box-shadow var(--dur) var(--ease); }
+  .on .dot { background: var(--on); box-shadow: 0 0 0 3px color-mix(in oklab, var(--on) 20%, transparent); }
+  .mode-tag { color: var(--fg-3); font-weight: 500; }
+  .node { margin-left: auto; color: var(--fg-3); font: 11px/1 var(--mono); letter-spacing: -.02em; max-width: 168px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* Primary action */
+  .power { width: 100%; display: flex; align-items: center; justify-content: center; gap: 7px; border: 1px solid transparent; border-radius: var(--r); padding: 9px; font-weight: 600; font-size: 13px; letter-spacing: -.01em; transition: filter var(--dur) var(--ease), transform var(--dur) var(--ease); }
+  .power svg { width: 14px; height: 14px; }
+  .power.start { background: var(--on); color: oklch(20% 0.03 152); }
+  .power.stop { background: var(--raise-2); border-color: var(--hair-2); color: var(--off); }
+  .power:not([disabled]):hover { filter: brightness(1.06); }
+  .power:not([disabled]):active { transform: scale(0.985); }
+  .power[disabled] { opacity: .8; }
+  .spinner { width: 14px; height: 14px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin .6s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Segmented mode */
+  .seg { position: relative; display: grid; grid-template-columns: 1fr 1fr; background: var(--raise); border: 1px solid var(--hair); border-radius: var(--r-sm); padding: 3px; margin-top: var(--s2); transition: opacity var(--dur) var(--ease); }
+  .seg .ind { position: absolute; top: 3px; bottom: 3px; left: 3px; width: calc(50% - 3px); background: var(--accent); border-radius: 6px; transition: transform var(--dur) var(--ease); }
+  .seg.priv .ind { transform: translateX(100%); }
+  .seg button { position: relative; z-index: 1; border: 0; background: 0; color: var(--fg-2); font-weight: 550; font-size: 12px; padding: 6px 4px; transition: color var(--dur) var(--ease); }
+  .seg button.sel { color: var(--accent-fg); }
+  .seg.locked { opacity: .5; }
+  .seg.locked button { cursor: not-allowed; }
+  .lockhint { color: var(--fg-3); font-size: 10.5px; text-align: center; margin-top: 5px; }
+
+  /* Section header */
+  .sec { display: flex; align-items: center; gap: var(--s2); margin: var(--s4) 2px var(--s2); }
+  .sec .lbl { color: var(--fg-3); font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .07em; }
+  .sec .count { color: var(--fg-2); font: 10px var(--mono); background: var(--raise); border: 1px solid var(--hair); border-radius: 999px; padding: 1px 7px; }
+  .txt-btn { display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--hair); background: var(--raise); color: var(--fg-2); border-radius: var(--r-xs); padding: 4px 9px; font-size: 11px; font-weight: 550; transition: all var(--dur) var(--ease); }
+  .txt-btn:hover { color: var(--fg); background: var(--raise-2); border-color: var(--hair-2); }
+  .txt-btn:active { transform: scale(0.96); }
+  .txt-btn svg { width: 12px; height: 12px; }
+  .sec .txt-btn { margin-left: auto; }
+  .txt-btn.spin svg { animation: spin .55s var(--ease); }
+
+  /* Service rows — identity left, metrics align right, open last */
+  .list { display: flex; flex-direction: column; gap: 5px; max-height: 318px; overflow-y: auto; margin: 0 -2px; padding: 0 2px; }
+  .svc { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; column-gap: var(--s3); padding: 9px 11px; background: var(--raise); border: 1px solid var(--hair); border-radius: var(--r-sm); transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease); }
+  .svc:hover { background: var(--raise-2); border-color: var(--hair-2); }
+  .badge { font: 9px/1 var(--mono); font-weight: 600; letter-spacing: .02em; color: var(--accent); background: color-mix(in oklab, var(--accent) 16%, transparent); border-radius: 4px; padding: 4px 5px; text-transform: lowercase; }
+  .meta { min-width: 0; }
+  .slug { font-weight: 600; letter-spacing: -.012em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .addr { color: var(--fg-2); font: 11px var(--mono); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dir { color: var(--fg-3); font-size: 10.5px; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .metrics { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; font: 10.5px/1.3 var(--mono); color: var(--fg-3); white-space: nowrap; }
+  .metrics b { color: var(--fg-2); font-weight: 600; }
+  .open { width: 28px; height: 28px; display: grid; place-items: center; border: 1px solid var(--hair); background: 0; color: var(--fg-2); border-radius: var(--r-xs); transition: all var(--dur) var(--ease); }
+  .open:hover { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+  .open:active { transform: scale(0.94); }
+  .more { width: 28px; height: 28px; display: grid; place-items: center; border: 1px solid transparent; background: 0; color: var(--fg-3); border-radius: var(--r-xs); transition: all var(--dur) var(--ease); }
+  .more:hover { background: var(--raise-2); border-color: var(--hair-2); color: var(--fg); }
+  .more:active { transform: scale(0.94); }
+
+  /* Per-service action menu */
+  .ctxmenu { position: fixed; z-index: 100; min-width: 170px; background: oklch(23% 0.01 264 / 0.97); border: 1px solid var(--hair-2); border-radius: var(--r); padding: 5px; box-shadow: 0 12px 34px oklch(0% 0 0 / 0.45); display: flex; flex-direction: column; gap: 1px; }
+  .ctxitem { display: flex; align-items: center; gap: 9px; width: 100%; text-align: left; border: 0; background: 0; color: var(--fg); border-radius: var(--r-xs); padding: 7px 9px; font-size: 12.5px; }
+  .ctxitem svg { width: 14px; height: 14px; flex: none; opacity: .8; }
+  .ctxitem:hover { background: var(--accent); color: var(--accent-fg); }
+  .ctxitem:hover svg { opacity: 1; }
+  .ctxitem.danger { color: var(--off); }
+  .ctxitem.danger:hover { background: var(--off); color: #fff; }
+  .ctxsep { height: 1px; background: var(--hair); margin: 4px 4px; }
+
+  /* Confirmation dialog */
+  .overlay { position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; background: oklch(0% 0 0 / 0.45); }
+  .dialog { width: 270px; background: oklch(22% 0.01 264 / 0.99); border: 1px solid var(--hair-2); border-radius: 14px; padding: 18px 16px 14px; text-align: center; box-shadow: 0 18px 50px oklch(0% 0 0 / 0.5); }
+  .dlg-icon { width: 42px; height: 42px; margin: 0 auto 11px; display: grid; place-items: center; border-radius: 11px; background: color-mix(in oklab, var(--off) 16%, transparent); color: var(--off); }
+  .dlg-icon svg { width: 22px; height: 22px; }
+  .dlg-title { font-weight: 650; letter-spacing: -.01em; }
+  .dlg-msg { color: var(--fg-2); font-size: 12px; line-height: 1.45; margin-top: 6px; }
+  .dlg-actions { display: flex; gap: 8px; margin-top: 16px; }
+  .dlg-btn { flex: 1; border: 1px solid var(--hair-2); background: var(--raise); color: var(--fg); border-radius: var(--r-sm); padding: 8px; font-weight: 550; font-size: 12.5px; transition: all var(--dur) var(--ease); }
+  .dlg-btn:hover { background: var(--raise-2); }
+  .dlg-btn:active { transform: scale(0.97); }
+  .dlg-btn.danger { background: var(--off); border-color: var(--off); color: #fff; }
+  .dlg-btn.danger:hover { filter: brightness(1.07); }
+
+  .empty { color: var(--fg-3); text-align: center; padding: 26px 16px; line-height: 1.55; font-size: 12.5px; }
+  .banner { display: flex; align-items: center; gap: 8px; font-size: 11.5px; line-height: 1.4; padding: 8px 10px; margin-top: var(--s2); border-radius: var(--r-sm); }
+  .banner.warn { color: var(--amber); background: color-mix(in oklab, var(--amber) 12%, transparent); border: 1px solid color-mix(in oklab, var(--amber) 26%, transparent); }
+  .banner.err { color: var(--off); background: color-mix(in oklab, var(--off) 13%, transparent); border: 1px solid color-mix(in oklab, var(--off) 28%, transparent); }
+
+  /* Footer */
+  .foot { display: flex; gap: 6px; margin-top: var(--s3); padding-top: var(--s3); border-top: 1px solid var(--hair); }
+  .ghost { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px; border: 1px solid var(--hair); background: var(--raise); border-radius: var(--r-sm); padding: 7px 4px; font-size: 12px; font-weight: 500; color: var(--fg-2); transition: all var(--dur) var(--ease); }
+  .ghost svg { width: 13px; height: 13px; }
+  .ghost:hover { background: var(--raise-2); color: var(--fg); border-color: var(--hair-2); }
+  .ghost:active { transform: scale(0.97); }
+  .ghost.danger { flex: 0 0 auto; padding: 7px 12px; color: var(--off); }
+  .ghost.danger:hover { background: color-mix(in oklab, var(--off) 15%, transparent); border-color: color-mix(in oklab, var(--off) 30%, transparent); }
+
+  /* Tailscale setup state */
+  .setup { text-align: center; padding: 18px 8px 8px; }
+  .setup .glyph { width: 52px; height: 52px; margin: 0 auto var(--s3); display: grid; place-items: center; border-radius: 14px; background: color-mix(in oklab, var(--accent) 16%, transparent); color: var(--accent); }
+  .setup .glyph svg { width: 26px; height: 26px; }
+  .setup h2 { font-size: 15px; letter-spacing: -.015em; }
+  .setup p { color: var(--fg-2); font-size: 12.5px; line-height: 1.5; margin: 7px auto 0; max-width: 280px; }
+  .steps { text-align: left; margin: var(--s3) auto 0; max-width: 280px; display: flex; flex-direction: column; gap: 8px; }
+  .step { display: flex; gap: 9px; align-items: flex-start; font-size: 12px; color: var(--fg-2); }
+  .step .n { flex: none; width: 18px; height: 18px; border-radius: 50%; background: var(--raise-2); border: 1px solid var(--hair-2); color: var(--fg); font: 10px var(--mono); display: grid; place-items: center; margin-top: 1px; }
+  .step code { font: 11px var(--mono); color: var(--accent); background: color-mix(in oklab, var(--accent) 13%, transparent); padding: 1px 5px; border-radius: 4px; }
+  .cta { display: inline-flex; align-items: center; gap: 7px; margin-top: var(--s4); background: var(--accent); color: var(--accent-fg); border: 0; border-radius: var(--r); padding: 9px 18px; font-weight: 600; transition: filter var(--dur) var(--ease), transform var(--dur) var(--ease); }
+  .cta:hover { filter: brightness(1.07); } .cta:active { transform: scale(0.98); }
+
+  .hidden { display: none !important; }
+  @media (prefers-reduced-motion: reduce) { *, .spinner { transition: none !important; animation: none !important; } }
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <!-- Setup state: Tailscale not installed -->
+  <div id="setup" class="setup hidden">
+    <div class="glyph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 12 17 6.2M7 12h10M7 12 17 17.8"/><circle cx="5" cy="12" r="2.4" fill="currentColor" stroke="none"/><circle cx="18.5" cy="6" r="1.9" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.9" fill="currentColor" stroke="none"/><circle cx="18.5" cy="18" r="1.9" fill="currentColor" stroke="none"/></svg></div>
+    <h2>Tailscale required</h2>
+    <p>Tailscale Proxy runs on top of Tailscale. Install it and sign in to get started.</p>
+    <div class="steps">
+      <div class="step"><span class="n">1</span><span>Install the Tailscale app for your platform.</span></div>
+      <div class="step"><span class="n">2</span><span>Sign in — run <code>tailscale up</code>.</span></div>
+      <div class="step"><span class="n">3</span><span>For public sharing, enable <strong>Funnel</strong> in the admin console.</span></div>
+    </div>
+    <button class="cta" onclick="open_('https://tailscale.com/download')">
+      Install Tailscale
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M9 7h8v8"/></svg>
+    </button>
+    <div class="foot"><button class="ghost" onclick="api('/api/settings')">Settings…</button><button class="ghost danger" onclick="api('/api/quit')">Quit</button></div>
+  </div>
+
+  <!-- Main state -->
+  <div id="main">
+    <div class="head" id="head">
+      <span class="state"><span class="dot"></span><span id="stateText">Stopped</span><span class="mode-tag" id="modeTag"></span></span>
+      <span class="node num" id="node"></span>
+    </div>
+
+    <button class="power start" id="power" onclick="toggle()">
+      <span id="powerIcon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v8"/><path d="M7.5 7a7 7 0 1 0 9 0"/></svg></span>
+      <span id="powerText">Start</span>
+    </button>
+
+    <div class="banner warn hidden" id="loginBanner"></div>
+    <div class="banner err hidden" id="err"></div>
+
+    <div class="seg" id="seg">
+      <span class="ind"></span>
+      <button data-private="false" class="sel" onclick="setMode(false)">Public · Funnel</button>
+      <button data-private="true" onclick="setMode(true)">Private · Serve</button>
+    </div>
+    <div class="lockhint hidden" id="lockhint">Stop to switch mode</div>
+
+    <div class="sec">
+      <span class="lbl">Services</span><span class="count num" id="count">0</span>
+      <button class="txt-btn" id="refresh" onclick="refreshNow()" aria-label="Refresh">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6"/></svg>
+        Refresh
+      </button>
+    </div>
+    <div class="list" id="list"></div>
+
+    <div class="foot">
+      <button class="ghost" onclick="api('/api/settings')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8M4.6 9a1.6 1.6 0 0 0-.3-1.8"/><circle cx="12" cy="12" r="9"/></svg>Settings</button>
+      <button class="ghost" onclick="api('/api/openconfig')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v5h5"/><path d="M19 8v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7z"/></svg>Config</button>
+      <button class="ghost danger" onclick="api('/api/quit')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v8"/><path d="M7.5 7a7 7 0 1 0 9 0"/></svg>Quit</button>
+    </div>
+  </div>
+
+</div>
+
+<div id="ctxmenu" class="ctxmenu hidden" role="menu"></div>
+
+<div id="confirm" class="overlay hidden">
+  <div class="dialog" role="alertdialog" aria-modal="true">
+    <div class="dlg-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg></div>
+    <div class="dlg-title" id="cTitle"></div>
+    <div class="dlg-msg" id="cMsg"></div>
+    <div class="dlg-actions">
+      <button class="dlg-btn" onclick="closeConfirm()">Cancel</button>
+      <button class="dlg-btn danger" id="cOk">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  const TOKEN = "__TOKEN__";
+  const HDR = { "X-TSP-Token": TOKEN };
+  const $ = (id) => document.getElementById(id);
+
+  // Pending-action guard so Start/Stop can't be double-fired.
+  let pending = false, pendingWant = false, pendingT = 0;
+
+  async function api(path, body) {
+    try { await fetch(path, { method: "POST", headers: HDR, body: body ? JSON.stringify(body) : null }); } catch (e) {}
+    refresh();
+  }
+  function toggle() {
+    if (pending) return;
+    const running = $("head").classList.contains("on");
+    pending = true; pendingWant = !running; pendingT = Date.now();
+    renderPower(running ? "stop" : "start", true);
+    api("/api/toggle");
+  }
+  function setMode(priv) {
+    if ($("seg").classList.contains("locked") || pending) return;
+    api("/api/mode", { private: priv });
+  }
+  const open_ = (url) => api("/api/open", { url });
+  function refreshNow() { $("refresh").classList.add("spin"); setTimeout(() => $("refresh").classList.remove("spin"), 560); api("/api/refresh"); }
+
+  function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+  function tilde(p) { const a = p.split("/").filter(Boolean); return a.length > 3 ? "…/" + a.slice(-2).join("/") : p; }
+  function ago(sec) { if (!sec) return ""; const d = Math.max(0, Math.floor(Date.now() / 1000 - sec)); if (d < 60) return d + "s"; if (d < 3600) return Math.floor(d / 60) + "m"; if (d < 86400) return Math.floor(d / 3600) + "h"; return Math.floor(d / 86400) + "d"; }
+
+  function renderPower(kind, loading) {
+    const p = $("power");
+    p.className = "power " + kind;
+    p.disabled = !!loading;
+    $("powerText").textContent = loading ? (kind === "start" ? "Starting…" : "Stopping…") : (kind === "start" ? "Start" : "Stop");
+    $("powerIcon").innerHTML = loading
+      ? '<span class="spinner"></span>'
+      : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v8"/><path d="M7.5 7a7 7 0 1 0 9 0"/></svg>';
+  }
+
+  function metric(value, label) { const d = el("div"); d.append(el("b", null, value)); if (label) d.append(document.createTextNode(" " + label)); return d; }
+
+  // Keyed row cache → update rows in place (no teardown) so the list never flickers.
+  const rows = new Map();
+
+  function makeRow(v) {
+    const row = el("div", "svc");
+    const badge = el("span", "badge");
+    const meta = el("div", "meta");
+    const slug = el("div", "slug"), addr = el("div", "addr"), dir = el("div", "dir");
+    meta.append(slug, addr, dir);
+    const metrics = el("div", "metrics");
+    const more = el("button", "more"); more.title = "Actions"; more.setAttribute("aria-label", "Actions");
+    more.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg>';
+    const r = { row, badge, slug, addr, dir, metrics, more, v };
+    more.addEventListener("click", (e) => { e.stopPropagation(); openMenu(more, r.v); });
+    row.append(badge, meta, metrics, more);
+    return r;
+  }
+
+  function updateRow(r, v) {
+    r.v = v;
+    r.badge.textContent = v.runtime || "?";
+    r.slug.textContent = v.slug;
+    r.addr.textContent = "127.0.0.1:" + v.port + (v.pid ? "  pid " + v.pid : "");
+    if (v.dir) { r.dir.textContent = tilde(v.dir); r.dir.title = v.dir; r.dir.style.display = ""; } else r.dir.style.display = "none";
+    r.metrics.textContent = "";
+    if (v.cpu || v.memMB) { r.metrics.append(metric((v.cpu || 0).toFixed(1) + "%", "cpu"), metric(v.memMB + "", "MB")); }
+    if (v.uptime) r.metrics.append(metric(v.uptime, "up"));
+    else if (v.discoveredAt) r.metrics.append(metric(ago(v.discoveredAt), "ago"));
+  }
+
+  function renderList(svcs, running) {
+    const list = $("list");
+    if (!svcs.length) {
+      rows.clear();
+      list.textContent = "";
+      list.append(el("div", "empty", running ? "No dev servers in range yet." : "Press Start to discover and share your dev servers."));
+      return;
+    }
+    const empty = list.querySelector(".empty"); if (empty) empty.remove();
+    const seen = new Set();
+    for (const v of svcs) {
+      seen.add(v.slug);
+      let r = rows.get(v.slug);
+      if (!r) { r = makeRow(v); rows.set(v.slug, r); }
+      updateRow(r, v);
+      list.append(r.row); // re-append moves the existing node, preserving order without flicker
+    }
+    for (const [slug, r] of rows) if (!seen.has(slug)) { r.row.remove(); rows.delete(slug); }
+  }
+
+  // ── Per-service action menu ───────────────────────────────────────────────
+  const ICON = {
+    local: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>',
+    globe: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>',
+    copy: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg>',
+    folder: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>',
+    info: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>',
+    kill: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v8"/><path d="M7.5 7a7 7 0 1 0 9 0"/></svg>',
+  };
+  function menuItem(icon, label, fn, danger) {
+    const it = el("button", "ctxitem" + (danger ? " danger" : ""));
+    it.innerHTML = icon; it.append(el("span", null, label));
+    it.addEventListener("click", () => { closeMenu(); fn(); });
+    return it;
+  }
+  function infoText(v) {
+    return [v.slug, "URL: " + (v.url || "—"), "Address: 127.0.0.1:" + v.port, "PID: " + (v.pid || "—"), "Folder: " + (v.dir || "—")].join("\n");
+  }
+  function openMenu(btn, v) {
+    const m = $("ctxmenu");
+    m.textContent = "";
+    m.append(menuItem(ICON.local, "Open local URL", () => open_("http://127.0.0.1:" + v.port)));
+    if (v.url) m.append(menuItem(ICON.globe, "Open proxy URL", () => open_(v.url)));
+    if (v.url) m.append(menuItem(ICON.copy, "Copy proxy URL", () => api("/api/copy", { text: v.url })));
+    m.append(el("div", "ctxsep"));
+    if (v.dir) m.append(menuItem(ICON.folder, "Open folder", () => api("/api/openfolder", { path: v.dir })));
+    m.append(menuItem(ICON.info, "Copy info", () => api("/api/copy", { text: infoText(v) })));
+    if (v.pid) { m.append(el("div", "ctxsep")); m.append(menuItem(ICON.kill, "Kill process", () => confirmKill(v), true)); }
+    m.classList.remove("hidden");
+    m.style.visibility = "hidden";
+    const rb = btn.getBoundingClientRect(), mw = m.offsetWidth, mh = m.offsetHeight;
+    let top = rb.bottom + 4; if (top + mh > innerHeight - 6) top = Math.max(6, rb.top - mh - 4);
+    let left = rb.right - mw; if (left < 6) left = 6;
+    m.style.top = top + "px"; m.style.left = left + "px"; m.style.visibility = "";
+  }
+  function closeMenu() { $("ctxmenu").classList.add("hidden"); }
+  function menuOpen() { return !$("ctxmenu").classList.contains("hidden"); }
+  document.addEventListener("click", (e) => { if (!e.target.closest("#ctxmenu")) closeMenu(); });
+
+  // ── Confirmation dialog ───────────────────────────────────────────────────
+  let confirmFn = null;
+  function showConfirm(title, msg, okLabel, fn) {
+    $("cTitle").textContent = title;
+    $("cMsg").textContent = msg;
+    $("cOk").textContent = okLabel;
+    confirmFn = fn;
+    $("confirm").classList.remove("hidden");
+  }
+  function closeConfirm() { $("confirm").classList.add("hidden"); confirmFn = null; }
+  function confirmOpen() { return !$("confirm").classList.contains("hidden"); }
+  function confirmKill(v) {
+    showConfirm("Kill " + v.slug + "?", "Stops the process (pid " + v.pid + "). Its route disappears on the next scan.", "Kill", () => api("/api/kill", { pid: v.pid }));
+  }
+  $("cOk").addEventListener("click", () => { const f = confirmFn; closeConfirm(); if (f) f(); });
+  $("confirm").addEventListener("click", (e) => { if (e.target === $("confirm")) closeConfirm(); });
+
+  function render(s) {
+    const ts = s.tailscale || {};
+    const setup = !ts.installed;
+    $("setup").classList.toggle("hidden", !setup);
+    $("main").classList.toggle("hidden", setup);
+    if (setup) return;
+
+    // Resolve pending Start/Stop (state flipped, or timed out after 9s).
+    if (pending && (s.running === pendingWant || Date.now() - pendingT > 9000)) pending = false;
+
+    $("head").classList.toggle("on", s.running);
+    $("stateText").textContent = s.running ? "Running" : "Stopped";
+    $("modeTag").textContent = s.running ? "·  " + (s.private ? "Serve" : "Funnel") : "";
+    $("node").textContent = s.node || "";
+
+    if (!pending) renderPower(s.running ? "stop" : "start", false);
+
+    $("seg").classList.toggle("priv", !!s.private);
+    $("seg").classList.toggle("locked", s.running);
+    $("lockhint").classList.toggle("hidden", !s.running);
+    for (const b of document.querySelectorAll(".seg button")) b.classList.toggle("sel", String(s.private) === b.dataset.private);
+
+    const lb = $("loginBanner");
+    const showLogin = ts.installed && !ts.up;
+    lb.classList.toggle("hidden", !showLogin);
+    if (showLogin) lb.textContent = "⚠ " + (ts.detail || "Tailscale is not logged in — run `tailscale up`.");
+    $("err").classList.toggle("hidden", !s.err);
+    $("err").textContent = s.err || "";
+
+    const svcs = s.services || [];
+    $("count").textContent = svcs.length;
+    renderList(svcs, s.running);
+  }
+
+  async function refresh() {
+    try { render(await (await fetch("/api/status", { headers: HDR })).json()); } catch (e) {}
+  }
+  refresh();
+  setInterval(refresh, 1500);
+
+  // Disable the native right-click menu (Look Up / Inspect / Translate …).
+  document.addEventListener("contextmenu", (e) => e.preventDefault());
+
+  // Esc closes the confirm dialog, then the action menu, then dismisses the panel.
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    if (confirmOpen()) { closeConfirm(); return; }
+    if (menuOpen()) { closeMenu(); return; }
+    fetch("/api/hidepanel", { method: "POST", headers: HDR }).catch(() => {});
+  });
+</script>
+</body>
+</html>

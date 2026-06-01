@@ -9,7 +9,7 @@ builds:
     binary: tsp
     env: [CGO_ENABLED=0]
     ldflags:
-      - -s -w -X main.version={{.Version}}
+      - -s -w -X github.com/meabed/tailscale-proxy/core.Version={{.Version}}
     goos: [darwin, linux, windows]
     goarch: [amd64, arm64]
 archives:

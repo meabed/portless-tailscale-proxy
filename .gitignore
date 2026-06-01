@@ -11,3 +11,7 @@
 node_modules/
 .idea
 .remember
+
+# desktop app build artifacts
+desktop/tsp-app
+desktop/build/bin/
