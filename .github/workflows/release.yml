@@ -28,6 +28,12 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  # GitHub forbids `secrets.*` directly in some `if:` expressions, so expose
+  # boolean flags once here and reuse them in the notify steps below.
+  HAS_SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL != '' }}
+  HAS_DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL != '' }}
+
 jobs:
   release:
     name: Publish
@@ -132,3 +138,40 @@ jobs:
               echo "ℹ️ **No release** — no \`feat\`/\`fix\`/\`perf\` commits since the last tag."
             fi
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Notify Slack
+        # !cancelled() → notify on success and failure, skip superseded builds; only
+        # when a real release attempt ran (gate enabled). Each step self-skips
+        # without its webhook secret.
+        if: ${{ !cancelled() && steps.gate.outputs.enabled == 'true' && env.HAS_SLACK_WEBHOOK_URL == 'true' }}
+        uses: slackapi/slack-github-action@v3.0.3
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          # Status-aware. Only trusted GitHub context fields are interpolated (injection-safe).
+          payload: |
+            text: "${{ job.status == 'success' && ':white_check_mark:' || ':x:' }} ${{ github.repository }} release ${{ job.status }} on ${{ github.ref_name }}"
+            blocks:
+              - type: "section"
+                text:
+                  type: "mrkdwn"
+                  text: "${{ job.status == 'success' && ':white_check_mark:' || ':x:' }} *${{ github.repository }}* release *${{ job.status }}* on `${{ github.ref_name }}`\n*Workflow:* ${{ github.workflow }}  •  *By:* ${{ github.actor }}  •  *Commit:* `${{ github.sha }}`"
+              - type: "actions"
+                elements:
+                  - type: "button"
+                    text:
+                      type: "plain_text"
+                      text: "View run"
+                    url: "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+      - name: Notify Discord
+        if: ${{ !cancelled() && steps.gate.outputs.enabled == 'true' && env.HAS_DISCORD_WEBHOOK_URL == 'true' }}
+        uses: sarisia/actions-status-discord@v1
+        with:
+          webhook: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          status: ${{ job.status }}
+          title: ${{ github.repository }}
+          # Ping @here only when it needs attention (failure); quiet on success.
+          content: "${{ job.status != 'success' && '@here' || '' }}"
+          username: GitHub Actions
+          nofail: true
