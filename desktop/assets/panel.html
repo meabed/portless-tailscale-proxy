@@ -108,6 +108,20 @@
   .ctxitem.danger:hover { background: var(--off); color: #fff; }
   .ctxsep { height: 1px; background: var(--hair); margin: 4px 4px; }
 
+  /* Confirmation dialog */
+  .overlay { position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; background: oklch(0% 0 0 / 0.45); }
+  .dialog { width: 270px; background: oklch(22% 0.01 264 / 0.99); border: 1px solid var(--hair-2); border-radius: 14px; padding: 18px 16px 14px; text-align: center; box-shadow: 0 18px 50px oklch(0% 0 0 / 0.5); }
+  .dlg-icon { width: 42px; height: 42px; margin: 0 auto 11px; display: grid; place-items: center; border-radius: 11px; background: color-mix(in oklab, var(--off) 16%, transparent); color: var(--off); }
+  .dlg-icon svg { width: 22px; height: 22px; }
+  .dlg-title { font-weight: 650; letter-spacing: -.01em; }
+  .dlg-msg { color: var(--fg-2); font-size: 12px; line-height: 1.45; margin-top: 6px; }
+  .dlg-actions { display: flex; gap: 8px; margin-top: 16px; }
+  .dlg-btn { flex: 1; border: 1px solid var(--hair-2); background: var(--raise); color: var(--fg); border-radius: var(--r-sm); padding: 8px; font-weight: 550; font-size: 12.5px; transition: all var(--dur) var(--ease); }
+  .dlg-btn:hover { background: var(--raise-2); }
+  .dlg-btn:active { transform: scale(0.97); }
+  .dlg-btn.danger { background: var(--off); border-color: var(--off); color: #fff; }
+  .dlg-btn.danger:hover { filter: brightness(1.07); }
+
   .empty { color: var(--fg-3); text-align: center; padding: 26px 16px; line-height: 1.55; font-size: 12.5px; }
   .banner { display: flex; align-items: center; gap: 8px; font-size: 11.5px; line-height: 1.4; padding: 8px 10px; margin-top: var(--s2); border-radius: var(--r-sm); }
   .banner.warn { color: var(--amber); background: color-mix(in oklab, var(--amber) 12%, transparent); border: 1px solid color-mix(in oklab, var(--amber) 26%, transparent); }
@@ -201,6 +215,18 @@
 
 <div id="ctxmenu" class="ctxmenu hidden" role="menu"></div>
 
+<div id="confirm" class="overlay hidden">
+  <div class="dialog" role="alertdialog" aria-modal="true">
+    <div class="dlg-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg></div>
+    <div class="dlg-title" id="cTitle"></div>
+    <div class="dlg-msg" id="cMsg"></div>
+    <div class="dlg-actions">
+      <button class="dlg-btn" onclick="closeConfirm()">Cancel</button>
+      <button class="dlg-btn danger" id="cOk">Confirm</button>
+    </div>
+  </div>
+</div>
+
 <script>
   const TOKEN = "__TOKEN__";
   const HDR = { "X-TSP-Token": TOKEN };
@@ -269,7 +295,7 @@
     if (v.dir) { r.dir.textContent = tilde(v.dir); r.dir.title = v.dir; r.dir.style.display = ""; } else r.dir.style.display = "none";
     r.metrics.textContent = "";
     if (v.cpu || v.memMB) { r.metrics.append(metric((v.cpu || 0).toFixed(1) + "%", "cpu"), metric(v.memMB + "", "MB")); }
-    if (v.uptime) r.metrics.append(metric(v.uptime, ""));
+    if (v.uptime) r.metrics.append(metric(v.uptime, "up"));
     else if (v.discoveredAt) r.metrics.append(metric(ago(v.discoveredAt), "ago"));
   }
 
@@ -295,7 +321,8 @@
 
   // ── Per-service action menu ───────────────────────────────────────────────
   const ICON = {
-    open: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M9 7h8v8"/></svg>',
+    local: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>',
+    globe: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>',
     copy: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg>',
     folder: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>',
     info: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>',
@@ -313,11 +340,13 @@
   function openMenu(btn, v) {
     const m = $("ctxmenu");
     m.textContent = "";
-    if (v.url) m.append(menuItem(ICON.open, "Open URL", () => open_(v.url)));
-    if (v.url) m.append(menuItem(ICON.copy, "Copy URL", () => api("/api/copy", { text: v.url })));
+    m.append(menuItem(ICON.local, "Open local URL", () => open_("http://127.0.0.1:" + v.port)));
+    if (v.url) m.append(menuItem(ICON.globe, "Open proxy URL", () => open_(v.url)));
+    if (v.url) m.append(menuItem(ICON.copy, "Copy proxy URL", () => api("/api/copy", { text: v.url })));
+    m.append(el("div", "ctxsep"));
     if (v.dir) m.append(menuItem(ICON.folder, "Open folder", () => api("/api/openfolder", { path: v.dir })));
     m.append(menuItem(ICON.info, "Copy info", () => api("/api/copy", { text: infoText(v) })));
-    if (v.pid) { m.append(el("div", "ctxsep")); m.append(menuItem(ICON.kill, "Kill process", () => api("/api/kill", { pid: v.pid }), true)); }
+    if (v.pid) { m.append(el("div", "ctxsep")); m.append(menuItem(ICON.kill, "Kill process", () => confirmKill(v), true)); }
     m.classList.remove("hidden");
     m.style.visibility = "hidden";
     const rb = btn.getBoundingClientRect(), mw = m.offsetWidth, mh = m.offsetHeight;
@@ -328,6 +357,23 @@
   function closeMenu() { $("ctxmenu").classList.add("hidden"); }
   function menuOpen() { return !$("ctxmenu").classList.contains("hidden"); }
   document.addEventListener("click", (e) => { if (!e.target.closest("#ctxmenu")) closeMenu(); });
+
+  // ── Confirmation dialog ───────────────────────────────────────────────────
+  let confirmFn = null;
+  function showConfirm(title, msg, okLabel, fn) {
+    $("cTitle").textContent = title;
+    $("cMsg").textContent = msg;
+    $("cOk").textContent = okLabel;
+    confirmFn = fn;
+    $("confirm").classList.remove("hidden");
+  }
+  function closeConfirm() { $("confirm").classList.add("hidden"); confirmFn = null; }
+  function confirmOpen() { return !$("confirm").classList.contains("hidden"); }
+  function confirmKill(v) {
+    showConfirm("Kill " + v.slug + "?", "Stops the process (pid " + v.pid + "). Its route disappears on the next scan.", "Kill", () => api("/api/kill", { pid: v.pid }));
+  }
+  $("cOk").addEventListener("click", () => { const f = confirmFn; closeConfirm(); if (f) f(); });
+  $("confirm").addEventListener("click", (e) => { if (e.target === $("confirm")) closeConfirm(); });
 
   function render(s) {
     const ts = s.tailscale || {};
@@ -372,9 +418,10 @@
   // Disable the native right-click menu (Look Up / Inspect / Translate …).
   document.addEventListener("contextmenu", (e) => e.preventDefault());
 
-  // Esc closes the action menu if open, otherwise dismisses the panel.
+  // Esc closes the confirm dialog, then the action menu, then dismisses the panel.
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
+    if (confirmOpen()) { closeConfirm(); return; }
     if (menuOpen()) { closeMenu(); return; }
     fetch("/api/hidepanel", { method: "POST", headers: HDR }).catch(() => {});
   });

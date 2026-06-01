@@ -65,7 +65,7 @@ func humanEtime(s string) string {
 	default:
 		return s
 	}
-	hm := fmt.Sprintf("%02d:%02d", h, m)
+	hm := fmt.Sprintf("%02dH:%02dM", h, m)
 	if days > 0 {
 		return fmt.Sprintf("%dd %s", days, hm)
 	}
