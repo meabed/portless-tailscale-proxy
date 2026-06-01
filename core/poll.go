@@ -8,7 +8,8 @@ import (
 
 // poll refreshes the store on an interval (and once immediately), logging
 // discovered / re-pointed / de-registered services and same-project duplicates.
-func poll(ctx context.Context, store *RouteStore, interval time.Duration) {
+// base is the public URL prefix (https://node.ts.net[:port]); "" hides URLs.
+func poll(ctx context.Context, store *RouteStore, interval time.Duration, base string) {
 	var lastDupKey string
 	refresh := func() {
 		added, repointed, removed, err := store.refresh()
@@ -17,8 +18,12 @@ func poll(ctx context.Context, store *RouteStore, interval time.Duration) {
 			return
 		}
 		for _, svc := range added {
-			log.Printf("discovered  %s  %s  :%d  pid %d  %s",
-				svc.Slug, runtimeOr(svc.Runtime), svc.Port, svc.PID, dirOr(svc.Dir))
+			url := ""
+			if base != "" {
+				url = "  →  " + base + "/" + svc.Slug + "/"
+			}
+			log.Printf("discovered  %s  %s  :%d  pid %d  %s%s",
+				svc.Slug, runtimeOr(svc.Runtime), svc.Port, svc.PID, dirOr(svc.Dir), url)
 		}
 		for _, svc := range repointed {
 			log.Printf("re-pointed  %s  →  :%d  pid %d  (most recent instance changed)",

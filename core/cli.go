@@ -203,7 +203,14 @@ func cmdStart(argv []string) int {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	go poll(ctx, store, time.Duration(o.interval)*time.Second)
+
+	// Resolve the public base once so discovery logs can show each service URL.
+	node, _ := nodeDNSName(runner)
+	base := ""
+	if node != "" {
+		base = publicBase(node, o.httpsPort)
+	}
+	go poll(ctx, store, time.Duration(o.interval)*time.Second, base)
 
 	if o.bind != "127.0.0.1" && o.bind != "localhost" {
 		fmt.Printf("⚠ proxy bound to %s:%d — reachable beyond this host (containers/LAN). Anyone who can reach it can hit your dev servers.\n", o.bind, o.port)
@@ -230,7 +237,7 @@ func cmdStart(argv []string) int {
 		fmt.Printf("%s → 127.0.0.1:%d (port %d)\n", mode.label(), o.port, o.httpsPort)
 	}
 
-	if node, nerr := nodeDNSName(runner); nerr == nil {
+	if node != "" {
 		fmt.Println("\nServices:")
 		printServiceURLs(store.snapshot(), node, o.httpsPort)
 		printDuplicateNotes(store.dupes())

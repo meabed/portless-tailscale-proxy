@@ -17,7 +17,7 @@ func TestPoll_picksUpChanges(t *testing.T) {
 	}, 5)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	go poll(ctx, store, 10*time.Millisecond)
+	go poll(ctx, store, 10*time.Millisecond, "")
 	stage.Store(1)
 	deadline := time.After(2 * time.Second)
 	for {
