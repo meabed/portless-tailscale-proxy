@@ -305,6 +305,9 @@ func (u *ui) startDashboard() (string, error) {
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}))
+	mux.HandleFunc("/api/checkupdate", auth(func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, core.CheckUpdate())
+	}))
 	mux.HandleFunc("/api/settings", auth(func(w http.ResponseWriter, r *http.Request) {
 		u.showSettings()
 		w.WriteHeader(http.StatusNoContent)

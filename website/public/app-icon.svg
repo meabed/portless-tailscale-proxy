@@ -1,0 +1,35 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Tailscale Proxy">
+  <defs>
+    <linearGradient id="tp-bg" x1="96" y1="64" x2="416" y2="448" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#6E9BFF"/>
+      <stop offset="0.55" stop-color="#3E63DD"/>
+      <stop offset="1" stop-color="#2A47C0"/>
+    </linearGradient>
+    <linearGradient id="tp-sheen" x1="256" y1="56" x2="256" y2="280" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="tp-shadow" x="32" y="40" width="448" height="456" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#14245F" flood-opacity="0.45"/>
+    </filter>
+  </defs>
+
+  <g filter="url(#tp-shadow)">
+    <rect x="56" y="56" width="400" height="400" rx="100" fill="url(#tp-bg)"/>
+  </g>
+  <rect x="56" y="56" width="400" height="400" rx="100" fill="url(#tp-sheen)"/>
+  <rect x="56.5" y="56.5" width="399" height="399" rx="99.5" stroke="#FFFFFF" stroke-opacity="0.18"/>
+
+  <!-- fan-out routing: one entry node → three service nodes -->
+  <g stroke="#FFFFFF" stroke-width="22" stroke-linecap="round">
+    <path d="M190 256 L334 172" opacity="0.95"/>
+    <path d="M190 256 L350 256" opacity="0.95"/>
+    <path d="M190 256 L334 340" opacity="0.95"/>
+  </g>
+  <g fill="#FFFFFF">
+    <circle cx="190" cy="256" r="38"/>
+    <circle cx="338" cy="172" r="25"/>
+    <circle cx="352" cy="256" r="25"/>
+    <circle cx="338" cy="340" r="25"/>
+  </g>
+</svg>

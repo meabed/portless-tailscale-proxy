@@ -293,6 +293,27 @@ func DefaultConfig() Config { return defaultConfig() }
 // KnownRuntimes returns the labels of the web runtimes discovery recognizes.
 func KnownRuntimes() []string { return knownRuntimeLabels() }
 
+// UpdateInfo reports the running version vs the latest GitHub release.
+type UpdateInfo struct {
+	Current   string `json:"current"`
+	Latest    string `json:"latest"`
+	HasUpdate bool   `json:"hasUpdate"`
+	Err       string `json:"err"`
+}
+
+// CheckUpdate queries the latest GitHub release and compares it to Version.
+func CheckUpdate() UpdateInfo {
+	u := UpdateInfo{Current: Version}
+	latest, err := latestVersion()
+	if err != nil {
+		u.Err = err.Error()
+		return u
+	}
+	u.Latest = latest
+	u.HasUpdate = Version != "dev" && normalizeVer(latest) != normalizeVer(Version)
+	return u
+}
+
 // TailscaleHealth reports whether the `tailscale` CLI is present and logged in.
 type TailscaleHealth struct {
 	Installed bool   `json:"installed"`
