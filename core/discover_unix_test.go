@@ -51,3 +51,78 @@ func TestParseLsofCwd(t *testing.T) {
 		t.Errorf("4231 cwd = %q", m[4231])
 	}
 }
+
+func TestParseDockerListeners_hostBoundAndInternalFallback(t *testing.T) {
+	body := []byte(`[
+		{
+			"Names":["/web"],
+			"Ports":[
+				{"PrivatePort":3000,"PublicPort":49153},
+				{"PrivatePort":8080,"PublicPort":0}
+			],
+			"NetworkSettings":{"Networks":{"bridge":{"IPAddress":"172.17.0.2"}}}
+		},
+		{
+			"Names":["/worker"],
+			"Ports":[{"PrivatePort":9000,"PublicPort":0}],
+			"NetworkSettings":{"Networks":{"bridge":{"IPAddress":""}}}
+		}
+	]`)
+
+	ls := parseDockerListeners(body, PortRange{Lo: 3000, Hi: 50000})
+	if len(ls) != 2 {
+		t.Fatalf("got %d listeners: %+v", len(ls), ls)
+	}
+	if ls[0].Port != 49153 || ls[0].Host != "127.0.0.1" || ls[0].Cwd != "web" {
+		t.Fatalf("host-bound listener wrong: %+v", ls[0])
+	}
+	if ls[1].Port != 8080 || ls[1].Host != "172.17.0.2" || ls[1].Cwd != "web" {
+		t.Fatalf("internal fallback listener wrong: %+v", ls[1])
+	}
+	if ls[0].PID == ls[1].PID {
+		t.Fatalf("docker ports need distinct synthetic PIDs, got %+v", ls)
+	}
+}
+
+func TestDockerListenersBuildServices_keepsMultipleContainerPorts(t *testing.T) {
+	ls := []listener{
+		{Port: 3000, Host: "172.17.0.2", PID: -1, Comm: "docker", Cwd: "web"},
+		{Port: 8080, Host: "172.17.0.2", PID: -2, Comm: "docker", Cwd: "web"},
+	}
+
+	svcs, dups := buildServices(ls, false, nil)
+	if len(svcs) != 2 {
+		t.Fatalf("got %d services: %+v", len(svcs), svcs)
+	}
+	if len(dups) != 1 {
+		t.Fatalf("got %d duplicate groups: %+v", len(dups), dups)
+	}
+	if svcs[0].Host != "172.17.0.2" || svcs[1].Host != "172.17.0.2" {
+		t.Fatalf("service hosts not preserved: %+v", svcs)
+	}
+}
+
+func TestDockerListenerContainerNamesRemainDistinctProjects(t *testing.T) {
+	ls := []listener{
+		{Port: 3000, Host: "127.0.0.1", PID: -1, Comm: "docker", Cwd: "web-api"},
+		{Port: 8090, Host: "127.0.0.1", PID: -2, Comm: "docker", Cwd: "model-server"},
+	}
+
+	svcs, dups := buildServices(ls, false, nil)
+	if len(svcs) != 2 {
+		t.Fatalf("got %d services: %+v", len(svcs), svcs)
+	}
+	if len(dups) != 0 {
+		t.Fatalf("distinct containers should not be duplicates: %+v", dups)
+	}
+	bySlug := map[string]Service{}
+	for _, svc := range svcs {
+		bySlug[svc.Slug] = svc
+	}
+	if _, ok := bySlug["web-api"]; !ok {
+		t.Fatalf("missing web-api slug: %+v", svcs)
+	}
+	if _, ok := bySlug["model-server"]; !ok {
+		t.Fatalf("missing model-server slug: %+v", svcs)
+	}
+}

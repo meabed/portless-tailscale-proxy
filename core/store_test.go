@@ -20,11 +20,30 @@ func TestRouteStore_addAndLookup(t *testing.T) {
 	if len(repointed) != 0 || len(removed) != 0 {
 		t.Errorf("expected no repointed/removed, got %v %v", repointed, removed)
 	}
-	if port, ok := store.lookup("a"); !ok || port != 1 {
-		t.Errorf("lookup(a) = (%d, %v), want (1, true)", port, ok)
+	if svc, ok := store.lookup("a"); !ok || svc.Port != 1 {
+		t.Errorf("lookup(a) = (%+v, %v), want port 1 and true", svc, ok)
 	}
 	if store.snapshot()["a"].Runtime != "node" {
 		t.Errorf("snapshot[a].Runtime wrong")
+	}
+}
+
+func TestRouteStore_repointsWhenHostChanges(t *testing.T) {
+	stage := 0
+	store := NewRouteStore(func() ([]Service, []Duplicate, error) {
+		stage++
+		if stage == 1 {
+			return []Service{{Slug: "a", Host: "127.0.0.1", Port: 3000}}, nil, nil
+		}
+		return []Service{{Slug: "a", Host: "172.17.0.2", Port: 3000}}, nil, nil
+	}, 1)
+
+	if added, repointed, _, _ := store.refresh(); len(added) != 1 || len(repointed) != 0 {
+		t.Fatalf("initial refresh added/repointed = %v/%v", added, repointed)
+	}
+	_, repointed, _, _ := store.refresh()
+	if len(repointed) != 1 || repointed[0].Host != "172.17.0.2" {
+		t.Fatalf("host change should repoint, got %+v", repointed)
 	}
 }
 

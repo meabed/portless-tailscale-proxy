@@ -47,7 +47,7 @@ func printStartHeader(o startOpts, mode Mode, rng PortRange, cfgPath string, exi
 func printServiceURLs(snap map[string]Service, node string, httpsPort int) {
 	base := publicBase(node, httpsPort)
 	for _, slug := range sortedSlugs(snap) {
-		fmt.Printf("  %s/%s/  →  127.0.0.1:%d\n", base, slug, snap[slug].Port)
+		fmt.Printf("  %s/%s/  →  %s\n", base, slug, targetDisplay(snap[slug]))
 	}
 }
 
@@ -75,7 +75,7 @@ func printDiscovered(dcfg discoverConfig, mode Mode, httpsPort int) int {
 	}
 	for _, slug := range sortedSlugs(snap) {
 		s := snap[slug]
-		fmt.Printf("  %-26s %-6s :%d  pid %d  %s\n", slug, runtimeOr(s.Runtime), s.Port, s.PID, dirOr(s.Dir))
+		fmt.Printf("  %-26s %-6s %-21s pid %d  %s\n", slug, runtimeOr(s.Runtime), targetDisplay(s), s.PID, dirOr(s.Dir))
 		if nerr == nil {
 			fmt.Printf("    %s/%s/\n", publicBase(node, httpsPort), slug)
 		}
@@ -98,7 +98,7 @@ func printDuplicateNotes(dups []Duplicate) {
 			if i == 0 {
 				tag = "  [main]"
 			}
-			fmt.Printf("    /%s/  →  :%d (%s, pid %d)%s\n", m.Slug, m.Port, runtimeOr(m.Runtime), m.PID, tag)
+			fmt.Printf("    /%s/  →  %s (%s, pid %d)%s\n", m.Slug, targetDisplay(m), runtimeOr(m.Runtime), m.PID, tag)
 		}
 	}
 }
@@ -126,11 +126,15 @@ func dirOr(dir string) string {
 	return dir
 }
 
+func targetDisplay(s Service) string {
+	return s.upstreamHost() + ":" + strconv.Itoa(s.Port)
+}
+
 // portList renders a project's services on one line: "/slug/ :port(runtime)".
 func portList(d Duplicate) string {
 	parts := make([]string, 0, len(d.Members))
 	for _, m := range d.Members {
-		parts = append(parts, "/"+m.Slug+"/ :"+strconv.Itoa(m.Port)+"("+runtimeOr(m.Runtime)+")")
+		parts = append(parts, "/"+m.Slug+"/ "+targetDisplay(m)+"("+runtimeOr(m.Runtime)+")")
 	}
 	return strings.Join(parts, ", ")
 }

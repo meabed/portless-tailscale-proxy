@@ -50,7 +50,7 @@ func writeIndex(w http.ResponseWriter, store *RouteStore, status int) {
 		if rt == "" {
 			rt = "?"
 		}
-		fmt.Fprintf(w, "  /%s/  →  127.0.0.1:%d  (%s)\n", s, svc.Port, rt)
+		fmt.Fprintf(w, "  /%s/  →  %s:%d  (%s)\n", s, svc.upstreamHost(), svc.Port, rt)
 	}
 }
 
@@ -58,14 +58,21 @@ type ctxKey int
 
 const targetKey ctxKey = 0
 
+func (s Service) upstreamHost() string {
+	if s.Host != "" {
+		return s.Host
+	}
+	return "127.0.0.1"
+}
+
 // target is the resolved upstream for a single request.
 type target struct {
-	port int    // upstream port on the loopback interface
+	host string
+	port int    // upstream port
 	path string // rewritten path with the matched segment stripped
 }
 
-// dialHost is the reliable IPv4 loopback address we connect to.
-func (t target) dialHost() string { return "127.0.0.1:" + strconv.Itoa(t.port) }
+func (t target) dialHost() string { return t.host + ":" + strconv.Itoa(t.port) }
 
 // hostHeader is the Host the app sees. We use "localhost" (not the raw IP)
 // because dev servers, CORS origins, and cookies are keyed to how developers
@@ -96,7 +103,7 @@ func newHandler(store *RouteStore, logRequests, forwardHost bool) http.Handler {
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			tgt := pr.In.Context().Value(targetKey).(target)
 			pr.Out.URL.Scheme = "http"
-			pr.Out.URL.Host = tgt.dialHost() // connect to 127.0.0.1
+			pr.Out.URL.Host = tgt.dialHost()
 			pr.Out.URL.Path = tgt.path
 			pr.Out.URL.RawQuery = pr.In.URL.RawQuery
 			// Present the request as "localhost:<port>" so it's indistinguishable
@@ -127,9 +134,9 @@ func newHandler(store *RouteStore, logRequests, forwardHost bool) http.Handler {
 		start := time.Now()
 		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 
-		port, path, ok := resolveRoute(store, r, w)
+		svc, path, ok := resolveRoute(store, r, w)
 		if ok {
-			tgt := target{port: port, path: path}
+			tgt := target{host: svc.upstreamHost(), port: svc.Port, path: path}
 			ctx := context.WithValue(r.Context(), targetKey, tgt)
 			proxy.ServeHTTP(rec, r.WithContext(ctx))
 		} else {
@@ -137,7 +144,7 @@ func newHandler(store *RouteStore, logRequests, forwardHost bool) http.Handler {
 		}
 
 		if logRequests {
-			logRequest(r, rec.status, port, time.Since(start))
+			logRequest(r, rec.status, svc, time.Since(start))
 		}
 	})
 }
@@ -151,26 +158,26 @@ const routeCookie = "tsp_route"
 // resolveRoute determines the upstream port and rewritten path for a request.
 // First path segment matching a slug wins (prefix stripped, affinity cookie set).
 // Otherwise it falls back to the affinity cookie and forwards the full path.
-// Returns (port, path, ok).
-func resolveRoute(store *RouteStore, r *http.Request, w http.ResponseWriter) (int, string, bool) {
+// Returns (service, path, ok).
+func resolveRoute(store *RouteStore, r *http.Request, w http.ResponseWriter) (Service, string, bool) {
 	seg, rest := splitFirstSegment(r.URL.Path)
 	if seg != "" {
-		if port, ok := store.lookup(seg); ok {
+		if svc, ok := store.lookup(seg); ok {
 			// Remember this app for subsequent prefix-less requests.
 			http.SetCookie(w, &http.Cookie{
 				Name: routeCookie, Value: seg, Path: "/", SameSite: http.SameSiteLaxMode,
 			})
-			return port, rest, true
+			return svc, rest, true
 		}
 	}
 	// Prefix-less request (asset/API/HMR): follow the affinity cookie, forwarding
 	// the full original path unchanged.
 	if c, err := r.Cookie(routeCookie); err == nil && c.Value != "" {
-		if port, ok := store.lookup(c.Value); ok {
-			return port, r.URL.Path, true
+		if svc, ok := store.lookup(c.Value); ok {
+			return svc, r.URL.Path, true
 		}
 	}
-	return 0, "", false
+	return Service{}, "", false
 }
 
 // statusRecorder captures the response status code while preserving streaming
@@ -200,10 +207,10 @@ func (s *statusRecorder) Flush() {
 }
 
 // logRequest prints one nicely formatted request line.
-func logRequest(r *http.Request, status, port int, dur time.Duration) {
+func logRequest(r *http.Request, status int, svc Service, dur time.Duration) {
 	target := "—"
-	if port > 0 {
-		target = "127.0.0.1:" + strconv.Itoa(port)
+	if svc.Port > 0 {
+		target = svc.upstreamHost() + ":" + strconv.Itoa(svc.Port)
 	}
 	log.Printf("%s %-6s %s → %s (%s)",
 		colorStatus(status), r.Method, r.URL.Path, target, dur.Round(time.Millisecond))

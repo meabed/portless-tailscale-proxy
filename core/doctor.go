@@ -25,6 +25,11 @@ const (
 func runDoctor(r Runner, disc *Discoverer, cfg discoverConfig, mode Mode) []Check {
 	var checks []Check
 
+	// Docker check (only when --docker is used).
+	if cfg.docker {
+		checks = append(checks, dockerCheck())
+	}
+
 	verOut, _, verErr := r.Run("tailscale", "version")
 	if verErr != nil {
 		checks = append(checks, Check{
@@ -96,6 +101,19 @@ func runDoctor(r Runner, disc *Discoverer, cfg discoverConfig, mode Mode) []Chec
 	}
 
 	return checks
+}
+
+// dockerCheck returns a Check for Docker socket availability.
+func dockerCheck() Check {
+	if dockerAvailable() {
+		return Check{Name: "docker available", OK: true, Detail: "socket accessible"}
+	}
+	return Check{
+		Name:   "docker available",
+		OK:     false,
+		Detail: "Docker socket not accessible at /var/run/docker.sock",
+		Fix:    "Start Docker or ensure the socket is available",
+	}
 }
 
 // firstLine returns the first line of s, trimmed.

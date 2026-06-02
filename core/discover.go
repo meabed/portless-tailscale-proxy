@@ -13,7 +13,8 @@ import (
 // Service is one discovered listening dev server.
 type Service struct {
 	Slug    string // URL path segment
-	Port    int    // listening port (127.0.0.1)
+	Port    int    // upstream port
+	Host    string // upstream host/IP; empty means 127.0.0.1
 	Runtime string // node|bun|deno or "" (unknown)
 	Dir     string // working directory (may be "")
 	PID     int
@@ -29,6 +30,7 @@ type discoverConfig struct {
 	rng      PortRange
 	all      bool
 	runtimes map[string]bool // nil = all known web runtimes
+	docker   bool            // also query Docker API for containers
 }
 
 // listener is a raw OS-level listening socket (pre-classification). Comm is the
@@ -36,6 +38,7 @@ type discoverConfig struct {
 // process's own name from `ps` (e.g. "http-server", or a "go-build" temp path).
 type listener struct {
 	Port   int
+	Host   string
 	PID    int
 	Comm   string
 	PsComm string
@@ -135,6 +138,9 @@ func projectRootDir(dir string) string {
 	if dir == "" || dir == "/" {
 		return ""
 	}
+	if !filepath.IsAbs(dir) {
+		return dir
+	}
 	d := dir
 	for {
 		for _, m := range projectMarkers {
@@ -178,7 +184,11 @@ type Duplicate struct {
 
 // serviceOf builds a Service from a raw listener under a given slug.
 func serviceOf(l listener, slug string) Service {
-	return Service{Slug: slug, Port: l.Port, Runtime: runtimeOf(l), Dir: l.Cwd, PID: l.PID}
+	host := l.Host
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	return Service{Slug: slug, Port: l.Port, Host: host, Runtime: runtimeOf(l), Dir: l.Cwd, PID: l.PID}
 }
 
 // projectBaseSlug derives the clean project slug from a working directory, or
@@ -325,6 +335,9 @@ func (d *Discoverer) Discover(cfg discoverConfig) ([]Service, []Duplicate, error
 	ls, err := d.listeners(cfg.rng)
 	if err != nil {
 		return nil, nil, err
+	}
+	if cfg.docker {
+		ls = d.mergeDockerListeners(ls, cfg.rng)
 	}
 	svcs, dups := buildServices(ls, cfg.all, cfg.runtimes)
 	return svcs, dups, nil

@@ -24,7 +24,7 @@ func TestPoll_picksUpChanges(t *testing.T) {
 	stage.Store(1)
 	deadline := time.After(2 * time.Second)
 	for {
-		if p, ok := store.lookup("x"); ok && p == 9 {
+		if svc, ok := store.lookup("x"); ok && svc.Port == 9 {
 			return
 		}
 		select {
