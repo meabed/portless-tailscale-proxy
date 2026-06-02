@@ -51,6 +51,30 @@ func (d *Discoverer) listeners(rng PortRange) ([]listener, error) {
 	return ls, nil
 }
 
+// mergeDockerListeners appends Docker-discovered listeners to lsof results,
+// deduplicating by port (lsof takes priority).
+func (d *Discoverer) mergeDockerListeners(lsofListeners []listener, rng PortRange) []listener {
+	dockerLs := d.dockerListeners(rng)
+	if len(dockerLs) == 0 {
+		return lsofListeners
+	}
+
+	// Build a set of ports already covered by lsof.
+	covered := make(map[int]bool, len(lsofListeners))
+	for _, l := range lsofListeners {
+		covered[l.Port] = true
+	}
+
+	for _, dl := range dockerLs {
+		if !covered[dl.Port] {
+			lsofListeners = append(lsofListeners, dl)
+			covered[dl.Port] = true
+		}
+	}
+
+	return lsofListeners
+}
+
 // parseLsofListeners parses `lsof -Fpcn` output, deduping per (pid,port).
 func parseLsofListeners(out string, rng PortRange) []listener {
 	var res []listener

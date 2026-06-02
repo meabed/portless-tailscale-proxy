@@ -33,6 +33,9 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.Private {
 		t.Error("Private = true, want false")
 	}
+	if cfg.Docker {
+		t.Error("Docker = true, want false")
+	}
 }
 
 func TestLoadConfigFrom_missingReturnsDefaults(t *testing.T) {
@@ -66,6 +69,7 @@ func TestSaveAndLoadRoundTrip(t *testing.T) {
 		HTTPSPort:        8443,
 		LogRequests:      false,
 		DeregisterCycles: 10,
+		Docker:           true,
 	}
 
 	if err := saveConfigTo(path, original); err != nil {
@@ -81,6 +85,13 @@ func TestSaveAndLoadRoundTrip(t *testing.T) {
 	}
 	if loaded != original {
 		t.Errorf("loaded = %+v, want %+v", loaded, original)
+	}
+}
+
+func TestOptionsFromConfigIncludesDocker(t *testing.T) {
+	opts := OptionsFromConfig(Config{Docker: true})
+	if !opts.Docker {
+		t.Fatal("OptionsFromConfig should copy Docker")
 	}
 }
 

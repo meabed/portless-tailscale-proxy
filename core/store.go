@@ -30,11 +30,11 @@ func NewRouteStore(discover func() ([]Service, []Duplicate, error), deregisterCy
 	}
 }
 
-func (s *RouteStore) lookup(slug string) (int, bool) {
+func (s *RouteStore) lookup(slug string) (Service, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	svc, ok := s.services[slug]
-	return svc.Port, ok
+	return svc, ok
 }
 
 func (s *RouteStore) snapshot() map[string]Service {
@@ -77,7 +77,7 @@ func (s *RouteStore) refresh() (added, repointed []Service, removed []string, er
 		switch {
 		case !ok:
 			added = append(added, svc)
-		case prev.Port != svc.Port:
+		case prev.Port != svc.Port || prev.Host != svc.Host:
 			repointed = append(repointed, svc)
 		}
 		s.services[slug] = svc // register or update
