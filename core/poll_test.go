@@ -16,8 +16,11 @@ func TestPoll_picksUpChanges(t *testing.T) {
 		return []Service{{Slug: "x", Port: 9, Runtime: "node"}}, nil, nil
 	}, 5)
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go poll(ctx, store, 10*time.Millisecond, "")
+	done := make(chan struct{})
+	go func() { poll(ctx, store, 10*time.Millisecond, ""); close(done) }()
+	// Join the poll goroutine before the test ends so it can't keep writing to the
+	// global logger while a later test reads it (-race cross-test data race).
+	t.Cleanup(func() { cancel(); <-done })
 	stage.Store(1)
 	deadline := time.After(2 * time.Second)
 	for {
